@@ -328,6 +328,22 @@ mod tests {
     }
 
     #[test]
+    fn claude_typographic_prose_is_rejected_without_rewriting_content() {
+        // Observed on Claude: prose typography changes structural JSON quotes.
+        // The adapter must select the visible response and instructions must
+        // request code blocks, rather than guessing which quotes to rewrite.
+        let prose = "[[BRIDGE_TOOL]]{“tool”:”write_document”,”arguments”:{“path”:”files/proof.md”,”content”:”Keep curly quotes: “example”.”,”create_only”:true}}[[/BRIDGE_TOOL]]";
+        let parsed = parse_tool_requests(prose);
+        assert!(parsed.calls.is_empty());
+        assert!(!parsed.problems.is_empty());
+        let code = "bridge-tool{\"tool\":\"write_document\",\"arguments\":{\"path\":\"files/proof.md\",\"content\":\"Keep curly quotes: “example”.\",\"create_only\":true}}";
+        let parsed = parse_tool_requests(code);
+        assert!(parsed.problems.is_empty());
+        assert_eq!(parsed.calls.len(), 1);
+        assert_eq!(parsed.calls[0].call.arguments["content"], "Keep curly quotes: “example”.");
+    }
+
+    #[test]
     fn parses_tagged_bridge_tool_without_fences() {
         let text =
             "Working.\nbridge-tool\n{\"tool\":\"list_files\",\"arguments\":{\"path\":\"PROJECT\"}}";

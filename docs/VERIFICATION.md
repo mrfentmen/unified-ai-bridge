@@ -1,6 +1,59 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.6**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The full provider acceptance matrix below remains historical.
+These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
+
+## Adapter and concurrent conversation checks 0.5.7 — November 16, 2026
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 129 passed, 0 failed; one deliberately slow command test ignored in the routine run |
+| Installed selftest | 41 passed, 0 failed; temporary files removed afterward |
+| Deterministic deployment | Native/tooling and WASM builds exited 0; source, package, generated manifest, Chrome card, seven panels and host hello all 0.5.7/protocol 6 |
+| Hidden-tab registration | All seven dedicated verification tabs registered after reload without being brought forward, with fresh host log entries between 18:03:05.706 and 18:03:05.743 UTC |
+| Provider file loops | ChatGPT, Claude, DeepSeek, Gemini, Grok on X, Qwen and Kimi each read their earlier real output, created a new file and read it back |
+| Provider approvals | Each then previewed a new one-file patch, requested apply, received an explicit in-page approval, created its reviewed file and read it back into the same conversation |
+| Concurrent routing | Seven tasks were submitted over eight seconds. Five patch requests overlapped while waiting for approval. All 14 outputs had exact expected bytes, one committed change each, and the correct agent in recovery/audit records; no cross-talk or duplicate writes observed |
+| Claude fix | Reads only the transcript roots inside the assistant wrapper, excluding its truncated hidden announcement. Fenced JSON completed the full loop. New chat/sidebar return retained one connected panel; the unrelated saved draft remained intact |
+| Busy composer | Before approving ChatGPT's patch, a known test draft was entered. The completed result waited, the draft remained byte-for-byte unchanged, and the panel offered Send pending result. Clearing only that test draft and clicking the button delivered the result; the model read the new file and finished |
+| Limitations observed | ChatGPT initially emitted only an opening marker; it executed nothing and required a new task with fenced JSON. Qwen paused on hidden message text and two candidate answers; foregrounding and selecting one identical read-only candidate allowed completion. These are not unattended-pass claims |
+| Audit/DB | Post-loop doctor passed configuration, manifest, binary, SQLite and the hash-chained audit |
+| External checks | Grok.com remains quota-blocked; persistent macOS consent and a physical older Intel Mac remain unverified. 0.5.6 CI passed Linux/Intel macOS tests and Intel packaging; 0.5.7 CI is recorded separately after push |
+
+Each provider created `files/bridge-057-<provider>.md` containing `Bridge 0.5.7 <provider> verified.`, then an approved patch created `files/bridge-057-<provider>-reviewed.md` containing `Approved batch for <provider> on 0.5.7.`. Provider slugs are `chatgpt`, `claude`, `deepseek`, `gemini`, `grok-x`, `qwen`, and `kimi`. None has a trailing newline. All **14 files** were checked against those exact bytes and their returned hashes. The final reviewed-file result was inspected in each real conversation, including DeepSeek's virtualized transcript after foregrounding.
+
+Observed log excerpts (UTC, private identifiers omitted):
+
+```text
+18:03:05.663 extension hello (0.5.7)
+18:05:58.302 tool apply_patch for CLAUDE ... (ok) ... duration=49187ms
+18:06:21.721 tool apply_patch for DEEPSEEK ... (ok) ... duration=70557ms
+18:06:21.880 tool apply_patch for GEMINI ... (ok) ... duration=63707ms
+18:06:22.044 tool apply_patch for GROK ... (ok) ... duration=64870ms
+18:06:22.340 tool apply_patch for KIMI ... (ok) ... duration=43173ms
+```
+
+The durations include time waiting for approval. Raw host logs, exact receipts and provider transcript readings are retained in ignored `docs/evidence/0.5.7/`. This strengthens UAB-05 and UAB-08 evidence, but does not complete the unattended scheduler, upload/download discovery or remaining format tools in [TASKS.md](TASKS.md).
+
+## Provider conversations 0.5.6 — November 16, 2026
+
+The seven provider identities each completed real reads, file creation, read-back and a traversal denial in dedicated conversations against the general scratch workspace. Each successful write has exactly one committed recovery receipt and correct agent attribution. Each denied destination remains absent. The raw conversations and receipts are local under `docs/evidence/0.5.6/`.
+
+| Provider surface | Model → host → conversation result | New file and bytes | Navigation/background observation |
+|---|---|---|---|
+| ChatGPT | Read, create, read-back, traversal denial passed | `files/bridge-056-chatgpt.md` · 42 | New chat and return through the sidebar; one panel, registered/connected while hidden >30 seconds |
+| Claude | Read passed; plain-text write exposed a hidden-announcement/typographic-quote defect. A new task using fenced JSON completed create/read-back/denial | `files/bridge-056-claude.md` · 40 | Registered/connected while hidden >30 seconds; navigation retest pending with the adapter fix |
+| DeepSeek | All four passed | `files/bridge-056-deepseek.md` · 42 | New chat and sidebar return; one panel, registered/connected while hidden >30 seconds |
+| Gemini | All four passed | `files/bridge-056-gemini.md` · 40 | Panel survived New chat; reopened original conversation and stayed connected hidden >30 seconds |
+| Grok on X | All four passed | `files/bridge-056-grok-x.md` · 43 | Panel survived New Chat; reopened original conversation and stayed connected hidden >30 seconds |
+| Grok.com | Setup connected, but website reported **Free tier limit reached** after a normal reload cleared its initial error screen | No create claimed | Full loop blocked by account quota |
+| Qwen | All four passed using plain sentinel lines | `files/bridge-056-qwen.md` · 38 | Panel survived New Chat; reopened original conversation and stayed connected hidden >30 seconds |
+| Kimi | All four passed in a fresh chat; the earlier website capacity refusal did not recur | `files/bridge-056-kimi.md` · 38 | New chat and sidebar return; one panel, registered/connected while hidden >30 seconds |
+
+The expected file content was `Bridge 0.5.6 <provider> round trip verified.` (ChatGPT included one trailing newline; Grok used `Grok on X`). Disk bytes and returned hashes matched. The files are ordinary Markdown outputs, not mock provider responses. Native logs distinguish these calls as `tool ... for <AGENT>`, unlike the manual controls' `panel tool ...` lines.
+
+Claude's saved draft was temporarily preserved in a private local copy, then restored with an exact text/hash comparison. It was never sent. Its failure exposed a real adapter issue: the outer assistant wrapper includes a hidden, truncated announcement, while visible prose changes ASCII quotes to typography. The planned fix reads only transcript content and requests fenced JSON; it does not loosen parsing or rewrite quotation marks.
+
+These observations establish registration while hidden, not guaranteed model generation in every background tab. Concurrent conversation routing, per-provider approval delivery and the latest-build matrix remain separate checks. The post-loop doctor verified SQLite and the append-only audit chain.
 
 ## Image file controls 0.5.6 — November 16, 2026
 

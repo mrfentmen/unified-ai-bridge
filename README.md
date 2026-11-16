@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.6** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -62,14 +62,14 @@ The implementation is Rust throughout: **Oxichrome** generates the extension pac
 
 | Website | What has been verified | Notes |
 | --- | --- | --- |
-| ChatGPT | Read → create → result, navigation and background connection | Live loop verified on 0.4.0; not rerun on 0.5.0 |
-| Claude | Read → create → result | Live loop verified on 0.4.0; the model omitted a requested punctuation mark |
-| DeepSeek | Read → create → result, navigation and background connection | Live loop verified on 0.4.0 |
-| Gemini | Read → create → result, navigation and background connection | Live loop verified on 0.4.0 |
-| Grok (`grok.com`) | Connection and a real read | Account usage limit blocked create-file verification |
-| Grok on X | Connection and conversation binding | File loop remains unverified |
-| Qwen | Read → create → read-back → denial, navigation and background connection | Verified on 0.4.6; use plain-text tool blocks and select one answer if two candidates appear |
-| Kimi | Read → create → read-back → denial, repeated reads, navigation and background connection; generated SVG download → approved import → read-back | General loop on 0.4.6; artifact import on 0.5.0 |
+| ChatGPT | Read → create → read-back; approved patch; draft-safe result delivery | 0.5.7; navigation/background also checked on 0.5.6. An incomplete model reply needed a corrected task |
+| Claude | Read → create → read-back; approved patch; navigation/background | 0.5.7 fixes hidden announcement extraction; use fenced `bridge-tool` JSON to preserve quotes |
+| DeepSeek | Read → create → read-back; approved patch | 0.5.7; navigation/background also checked on 0.5.6 |
+| Gemini | Read → create → read-back; approved patch | 0.5.7; navigation/background also checked on 0.5.6 |
+| Grok (`grok.com`) | Connected on 0.5.6 | Website's free-tier limit blocked the current file loop |
+| Grok on X | Read → create → read-back; approved patch | 0.5.7; navigation/background also checked on 0.5.6 |
+| Qwen | Read → create → read-back; approved patch | 0.5.7; needed foreground rendering and a choice between candidate answers |
+| Kimi | Read → create → read-back; approved patch; earlier generated SVG import | General loop on 0.5.7; artifact import on 0.5.0 |
 
 Qwen sometimes hides rendered message text in background tabs. Its session stays connected, but tool execution may wait until you bring the tab into view. All adapters depend on website markup and can need updates when a provider changes its interface.
 

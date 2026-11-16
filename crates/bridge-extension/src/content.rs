@@ -1333,6 +1333,11 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
     };
     let adapter = state.borrow().adapter;
     let Some(turn) = adapter.delivery_turn(&document) else {
+        // A streaming reply may not have its permanent message ID yet. This
+        // is normal on Kimi; do not report an adapter failure while it streams.
+        if adapter.is_generating(&document) {
+            return;
+        }
         let mut current = state.borrow_mut();
         if adapter.grok_on_x && adapter.last_assistant(&document).is_none()
             && !adapter.is_generating(&document)
@@ -1716,7 +1721,24 @@ fn instructions_already_sent(adapter: Adapter, document: &Document) -> bool {
 }
 
 fn assistant_text(node: &Element) -> String {
-    let text = node.text_content().unwrap_or_default();
+    // Claude's outer assistant wrapper contains an sr-only announcement that
+    // repeats and truncates the response. Mixing it with the visible reply can
+    // turn valid JSON into an unterminated string, or execute an announcement
+    // instead of the displayed text. Read the observed transcript roots only;
+    // keep the outer node for stable turn identity and completion checks.
+    let text = if node.get_attribute("data-cds").as_deref() == Some("AssistantMessage") {
+        node.query_selector_all("[data-transcript-engine-root]")
+            .ok()
+            .map(|roots| {
+                (0..roots.length())
+                    .filter_map(|i| roots.item(i)?.text_content())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
+    } else {
+        node.text_content().unwrap_or_default()
+    };
     let trimmed = text.trim();
     if trimmed.len() > 240_000 {
         let mut boundary = trimmed.len() - 240_000;
@@ -1892,6 +1914,7 @@ impl Adapter {
                 "button[aria-label*=\"Stop\"]",
             ],
             Provider::Claude => &[
+                "[data-testid=\"assistant-message\"][data-is-streaming=\"true\"]",
                 "button[aria-label*=\"Stop\"]",
                 "button[aria-label*=\"stop\"]",
             ],
@@ -2094,6 +2117,12 @@ impl Adapter {
     }
 
     fn reply_text(self, node: &Element) -> Result<String, String> {
+        if self.provider == Provider::Claude
+            && node.get_attribute("data-cds").as_deref() == Some("AssistantMessage")
+            && node.query_selector("[data-transcript-engine-root]").ok().flatten().is_none()
+        {
+            return Err("This website's interface changed; the adapter needs an update. Claude visible reply selector [data-transcript-engine-root] failed; hidden announcements were not executed.".into());
+        }
         if self.provider == Provider::Qwen {
             if node.closest(".qwen-chat-message-assistant").ok().flatten()
                 .and_then(|turn| turn.query_selector_all(".response-message-content.phase-answer").ok())

@@ -14,6 +14,8 @@ The 0.5.5 milestone completes the initial ZIP subset in UAB-14: inspect/create/e
 
 The 0.5.6 milestone completes the declared PNG/JPEG/WebP subset in UAB-17: metadata inspection and approved resize/crop/rotate/convert into new files. Six integration tests and a real Chrome resize/reopen plus denial passed. Animation, ICC profiles and high-bit-depth transformations are refused; this does not establish image delivery to a model. See [image controls](IMAGES.md).
 
+The 0.5.7 reliability pass verified read/create/read-back and approved patch delivery for all seven provider identities (Grok on X), including overlapping approvals, draft-safe result delivery and fresh hidden-tab registration. It fixes Claude hidden-announcement extraction and documents Qwen foreground/candidate-choice limits and the Grok.com quota block. UAB-05 remains open for fully unattended recovery across these website states. See [current evidence](VERIFICATION.md).
+
 ## 1. Make unattended work dependable
 
 Start here. The current configuration permits 16 calls per task, 4 per assistant response, 180 seconds for an approval, and 240 seconds for a tool call. These are current limits, not recommended overnight defaults. The installed host has an ad-hoc linker signature; stable signing and permission persistence still need implementation and verification.

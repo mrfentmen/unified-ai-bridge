@@ -33,6 +33,9 @@ Your active workspace root is `{workspace}`. The bridge gives you real, permissi
 when a tool reports success, a real file operation happened; when it fails, the error is real.\n\n"
     ));
     out.push_str("## How to call tools\n\n");
+    if agent == Agent::Claude {
+        out.push_str("Claude display requirement: put every tool request inside a fenced code block tagged bridge-tool, using ordinary ASCII double quotes. Do not put JSON or tool sentinels in prose: this website can turn prose quotes into curly typography. Code blocks preserve strict JSON. Never repair a malformed request by changing the meaning of its arguments.\n\n");
+    }
     if agent == Agent::Qwen {
         out.push_str("Qwen display requirement: emit each tool request as ONE plain-text line using the exact sentinels [[BRIDGE_TOOL]] and [[/BRIDGE_TOOL]] around strict compact JSON. Do not use Markdown fences, backticks, lists or code editors for tool calls: this website can hide code lines. Example: [[BRIDGE_TOOL]]{\"tool\":\"list_files\",\"arguments\":{\"path\":\".\"}}[[/BRIDGE_TOOL]]. The following fenced format describes the shared protocol; on Qwen prefer the plain-text sentinel form.\n\n");
     }
@@ -127,5 +130,16 @@ mod tests {
         }
         assert!(text.contains("AGENTS/CHATGPT"));
         assert!(!text.contains("agent\":"));
+    }
+
+    #[test]
+    fn claude_requires_code_blocks_while_qwen_requires_plain_sentinels() {
+        let claude = build_instructions(Agent::Claude, "/tmp/workspace", "Claude");
+        assert!(claude.contains("Claude display requirement"));
+        assert!(claude.contains("ordinary ASCII double quotes"));
+        assert!(!claude.contains("Qwen display requirement"));
+        let qwen = build_instructions(Agent::Qwen, "/tmp/workspace", "Qwen");
+        assert!(qwen.contains("Qwen display requirement"));
+        assert!(!qwen.contains("Claude display requirement"));
     }
 }
