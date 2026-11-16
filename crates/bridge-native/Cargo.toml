@@ -43,6 +43,12 @@ syn = { version = "=2.0.119", features = ["full", "parsing"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 roxmltree = "=0.21.1"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.4"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSData", "NSString"] }
+objc2-pdf-kit = { version = "=0.3.2", default-features = false, features = ["std", "PDFDocument", "PDFPage", "objc2-core-graphics"] }
+objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["std", "CGBitmapContext", "CGContext", "CGColorSpace", "CGImage", "CGPDFPage", "CGAffineTransform"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 png.workspace = true

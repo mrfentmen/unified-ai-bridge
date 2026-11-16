@@ -236,7 +236,6 @@ async fn load(
     path: &str,
     expected: Option<&str>,
 ) -> Result<(Parsed, String), ToolFailure> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let p = ctx.resolve_existing(path)?;
     ctx.check_read(tool, &p)?;
     if p.absolute
@@ -244,7 +243,7 @@ async fn load(
         .and_then(|s| s.to_str())
         .is_none_or(|s| !s.eq_ignore_ascii_case("docx"))
     {
-        return Err(unsupported("this reader supports DOCX body text only; PDF, DOC, DOCM, OCR and page rendering are unavailable"));
+        return Err(unsupported("this reader supports DOCX body text and PDF on macOS; DOC, DOCM and OCR are unavailable"));
     }
     let bytes = binary::read_source(ctx, tool, path, MAX_INPUT)?;
     let hash = fsops::sha256_bytes(&bytes);
@@ -253,6 +252,18 @@ async fn load(
             "document changed; restart extraction at offset zero".into(),
         ));
     }
+    let mut value = run_worker(ctx, "docx-worker", &bytes, 2 * 1024 * 1024, 4).await?;
+    let parsed: Parsed = serde_json::from_value(value["document"].take()).map_err(io)?;
+    Ok((parsed, hash))
+}
+pub(super) async fn run_worker(
+    ctx: &ToolContext<'_>,
+    worker: &str,
+    bytes: &[u8],
+    output_limit: u64,
+    seconds: u64,
+) -> Result<Value, ToolFailure> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let _slot = PARSERS
         .try_acquire()
         .map_err(|_| ToolFailure::Conflict("both document parser slots are busy".into()))?;
@@ -266,7 +277,7 @@ async fn load(
         ctx.app.home.installed_binary()
     };
     let mut child = tokio::process::Command::new(exe)
-        .arg("docx-worker")
+        .arg(worker)
         .env_clear()
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -282,7 +293,7 @@ async fn load(
         .stdout
         .take()
         .ok_or_else(|| io("document parser stdout missing"))?;
-    let result = tokio::time::timeout(std::time::Duration::from_secs(4), async {
+    let result = tokio::time::timeout(std::time::Duration::from_secs(seconds), async {
         let feed = async {
             stdin.write_all(&bytes).await?;
             stdin.shutdown().await?;
@@ -291,11 +302,8 @@ async fn load(
         };
         let read = async {
             let mut data = vec![];
-            stdout
-                .take(2 * 1024 * 1024 + 1)
-                .read_to_end(&mut data)
-                .await?;
-            if data.len() > 2 * 1024 * 1024 {
+            stdout.take(output_limit + 1).read_to_end(&mut data).await?;
+            if data.len() as u64 > output_limit {
                 return Err(std::io::Error::other("document output exceeded budget"));
             }
             Ok(data)
@@ -314,22 +322,24 @@ async fn load(
         other => {
             let _ = child.kill().await;
             return Err(unsupported(format!(
-                "document parser failed or exceeded four-second budget: {other:?}"
+                "document parser failed or exceeded {seconds}-second budget: {other:?}"
             )));
         }
     };
-    let mut value: Value = serde_json::from_slice(&raw).map_err(io)?;
+    let value: Value = serde_json::from_slice(&raw).map_err(io)?;
     if let Some(error) = value["error"].as_str() {
         return Err(unsupported(format!("document parse refused: {error}")));
     }
-    let parsed: Parsed = serde_json::from_value(value["document"].take()).map_err(io)?;
-    Ok((parsed, hash))
+    Ok(value)
 }
 fn metadata(parsed: &Parsed, hash: &str) -> Value {
     json!({"format":"docx","sha256":hash,"text_bytes":parsed.text.len(),"body_paragraphs":parsed.paragraphs,"tables":parsed.tables,"drawings":parsed.drawings,"explicit_page_breaks":parsed.explicit_page_breaks,"page_count":null,"tracked_changes":parsed.tracked_changes,"cached_fields":parsed.fields,"alternate_content_skipped":parsed.alternate_content_skipped,"package_entries":parsed.package_entries,"omitted_parts":parsed.omitted_parts,"ocr":"unavailable","page_rendering":"unavailable","text_scope":"Main body only; table cells become paragraphs. Insertions included, deletions/move-from/alternate-content omitted. Field results are cached text, not evaluated. Formatting, hidden-text visibility and layout are not reproduced. Headers, footers, notes, comments, embedded objects and images are not extracted. Page breaks are not page count. No relationship target is opened."})
 }
 pub async fn info(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, ToolFailure> {
     let args: PathArgs = parse_args(args)?;
+    if super::pdf::is_pdf(&args.path) {
+        return super::pdf::info(ctx, &args.path).await;
+    }
     let (parsed, hash) = load(ctx, "document_info", &args.path, None).await?;
     let data = metadata(&parsed, &hash);
     Ok(
@@ -347,6 +357,16 @@ pub async fn extract(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, 
         return Err(invalid(
             "continuation requires expected_sha256 from the first result",
         ));
+    }
+    if super::pdf::is_pdf(&args.path) {
+        return super::pdf::extract(
+            ctx,
+            &args.path,
+            args.offset,
+            limit,
+            args.expected_sha256.as_deref(),
+        )
+        .await;
     }
     let (parsed, hash) = load(
         ctx,

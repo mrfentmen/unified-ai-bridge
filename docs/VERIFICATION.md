@@ -2,6 +2,25 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## PDF text and page-preview candidate 0.5.15 — November 16, 2026
+
+The source and isolated package are 0.5.15. Normal Chrome files/native installation remain 0.5.7; no new live browser acceptance is claimed.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 181 passed, 0 failed, one separately verified long job omitted from routine runs |
+| Six PDF integration checks | Physical-page text/chunk attribution, empty text pages, rotation/pixel positions, approved new PNGs, preserved source, denial, changed source/target/lock/symlink, research and hard-link protections, encryption/size/malformed/range errors |
+| Worker restrictions | A separate child test verified denied user-file reads, writes and a connection to a real local listener. The final narrower system-library allowlist was retested successfully |
+| Isolated build | WASM/native/tooling release builds exited 0; source/package/manifest/native versions matched 0.5.15 |
+| Packaged Native Messaging | W3C's public dummy.pdf returned `Dummy PDF file` and physical page 1. Denial created no folder; approval saved a 707 × 1000 PNG. Repeated destination, private read and changed-PDF continuation were refused |
+| Render inspection | The packaged PNG was opened and visually inspected: upright, legible text, white page and expected placement. Pixel tests caught and corrected CoreGraphics' default centering without upscaling; rotated-page placement also passed |
+| Installed checks | 41 self-tests passed; doctor passed config/binary/manifest/SQLite and all 22 database/file audit entries |
+| Compatibility evidence | The local arm64 binary declares macOS 11.0 minimum, SDK 27.2. This is build metadata, not proof on macOS 11 or a physical old Intel Mac. PDF is explicitly unsupported on Linux |
+| Previous CI | 0.5.13 run 43944425521 passed all jobs. 0.5.14 run 43946276762 passed Linux and Intel tests, confirming the lifetime-lock test fix; packaging was still running |
+| Browser | Document controls compiled; provider delivery and live UI acceptance remain pending |
+
+Public sample: [W3C dummy.pdf](https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf), SHA-256 `3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4`. Packaged preview SHA-256: `6bdc49ae22aac99c95725e2355f3ccaf96e49dec339e5926c42a2dece686a90c`. Installed native SHA-256: `849aa5cc2efdfe6ee72b9c538736408e81cbbf6e9f736beb432b257e1574b70f`. Raw logs, framed messages and preview are in ignored `docs/evidence/0.5.15/`. This proves a declared PDF subset, not OCR, annotations/forms, Word rendering or image delivery to a provider. [Limits](DOCUMENTS.md).
+
 ## MCP lifecycle candidate 0.5.14 — November 16, 2026
 
 The source and isolated package are 0.5.14. Normal Chrome files/native installation remain 0.5.7; no new browser acceptance is claimed.
@@ -13,7 +32,7 @@ The source and isolated package are 0.5.14. Normal Chrome files/native installat
 | Isolated package | WASM/native/tooling release builds exited 0; source/package/manifest/native versions all 0.5.14 |
 | Packaged Native Messaging → RMCP | Registered the isolated actual bridge executable, discovered/granted read_file, denied one request, read copied docs/GIT.md over two separate connections, then removed the grant and refused the next request |
 | Installed checks | 41 self-tests passed; doctor passed config/binary/manifest/SQLite and 21 matching audit entries |
-| Intel CI finding | 0.5.12 run 43942537947 passed Linux but failed crashed_receipt_is_reconciled_without_rerun on Intel. The test rewrote a terminal receipt while the exiting worker still held its lifetime lock. It now waits for lock release, verifies a stale heartbeat remains running while a lock is owned, then verifies interruption after release. No recovery invariant was weakened; Intel confirmation is pending |
+| Intel CI finding | 0.5.12 run 43942537947 passed Linux but failed crashed_receipt_is_reconciled_without_rerun on Intel. The test rewrote a terminal receipt while the exiting worker still held its lifetime lock. It now waits for lock release, verifies a stale heartbeat remains running while a lock is owned, then verifies interruption after release. No recovery invariant was weakened; Linux and Intel tests passed in run 43946276762 (packaging was still running when checked) |
 | Browser | Readiness/removal controls compiled; live UI acceptance remains pending |
 
 Installed native SHA-256: `bad329bdf5463ef575f800721f9fb915e070a786b5afe5a3cd33931b2a38259e`. Raw outputs are in ignored `docs/evidence/0.5.14/`. The delay/process test fixture is not presented as a third-party application or provider integration. [Semantics and remaining work](INTEGRATIONS.md).

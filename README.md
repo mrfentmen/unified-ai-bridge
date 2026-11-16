@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.14 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.15 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -26,7 +26,7 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **Navigate source code (0.5.9 candidate).** Page through bounded text matches, list Rust syntax declarations, and follow supported compiler diagnostics to their source lines. Semantic references and live UI acceptance remain pending. [Code navigation](docs/CODE-NAVIGATION.md).
 - **Review and commit local changes (0.5.11 candidate).** Inspect Git status, diffs and history. Preview selected working files and approve a commit on a new branch while preserving your current branch, staging area and unrelated edits. Native checks passed; live UI acceptance remains pending. [Git behavior and limits](docs/GIT.md).
 - **Read and query tables (0.5.12 candidate).** Page through CSV/TSV files, select columns, filter records and calculate bounded numeric summaries. Values stay data; formulas are never executed. XLSX and browser acceptance remain pending. [Table support](docs/TABLES.md).
-- **Read Word body text (0.5.13 candidate).** Extract bounded DOCX text chunks with source-hash checks and explicit content omissions. Macros and external references stay inert. PDF, OCR, page rendering and live browser acceptance remain pending. [Document subset](docs/DOCUMENTS.md).
+- **Read documents and preview PDF pages (0.5.15 candidate).** Extract DOCX body text or PDF embedded text with page references on macOS. Save approved PDF page previews as new PNG files. Encrypted PDFs, OCR, Word rendering and chat image delivery remain unavailable. [Document subsets](docs/DOCUMENTS.md).
 - **Use your own project commands.** Grant a specific executable, arguments, working directory, timeout, and output limit. The chat selects an allowed command; it cannot invent a shell command.
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.

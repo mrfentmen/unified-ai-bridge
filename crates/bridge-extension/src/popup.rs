@@ -525,6 +525,9 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let table_page=RwSignal::new(None::<(String,serde_json::Value)>);
     let document_path=RwSignal::new(String::new());
     let document_next=RwSignal::new(None::<serde_json::Value>);
+    let document_hash=RwSignal::new(String::new());
+    let document_destination=RwSignal::new(String::new());
+    let document_pages=RwSignal::new("{\"first_page\":1,\"last_page\":1,\"max_dimension\":1200}".to_string());
     let code_path=RwSignal::new(String::new());
     let code_query=RwSignal::new(String::new());
     let code_cursor=RwSignal::new(serde_json::Value::Null);
@@ -556,6 +559,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             git_commit.set(String::new());
             table_page.set(None);
             document_next.set(None);
+            document_hash.set(String::new());
             zip_hash.set(String::new());
             image_hash.set(String::new());
             code_cursor.set(serde_json::Value::Null);symbol_offset.set(None);symbol_hash.set(String::new());
@@ -613,6 +617,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     if value["status"]=="ok" && name=="git_log"{git_commit.set(value["data"]["base_commit"].as_str().unwrap_or_default().into());}
                     if name=="read_table"||name=="query_table"{table_page.set(None);if value["status"]=="ok"&&!value["data"]["next_offset"].is_null(){let mut next=args.clone();next["offset"]=value["data"]["next_offset"].clone();next["expected_sha256"]=value["data"]["sha256"].clone();table_page.set(Some((name.clone(),next)));}}
                     if name=="extract_document_text"{document_next.set(None);if value["status"]=="ok"&&!value["data"]["next_offset"].is_null(){let mut next=args.clone();next["offset"]=value["data"]["next_offset"].clone();next["expected_sha256"]=value["data"]["sha256"].clone();document_next.set(Some(next));}}
+                    if value["status"]=="ok"&&(name=="document_info"||name=="extract_document_text"){document_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());}
                     if value["status"]=="ok" && name=="calculate_sha256" {
                         let hash=value["data"]["sha256"].as_str().unwrap_or_default().to_string();
                         if args["path"].as_str()==Some(binary_source.get_untracked().as_str()){binary_source_hash.set(hash.clone());}
@@ -708,12 +713,15 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <button style=CONTROL_STYLE disabled=move||busy.get()||table_path.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&table_query.get()){Ok(mut args) if args.is_object()=>{args["path"]=json!(table_path.get());execute("query_table".into(),args);},_=>error.set(Some("Enter a JSON object with columns, filters and/or aggregate_columns.".into()))}}>"Run structured query"</button>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||table_page.get().is_none() on:click=move |_|{if let Some((name,args))=table_page.get(){execute(name,args);}}>"Next table page"</button>
                 </details>
-                <details><summary>"Read DOCX text"</summary>
-                    <p>"Main-body text only, with reported omissions. No layout, page numbers, PDF, OCR or image extraction. External references and field instructions are never opened or evaluated."</p>
-                    <input aria-label="DOCX file path" style=CONTROL_STYLE placeholder="files/document.docx" prop:value=move||document_path.get() on:input=move|ev|{document_path.set(event_target_value(&ev));document_next.set(None);}/>
+                <details><summary>"Read documents and preview PDF pages"</summary>
+                    <p>"DOCX body text with reported omissions. On macOS: PDF embedded text with physical page references and approved PNG previews. No OCR, encrypted PDFs or DOCX rendering. Previews omit annotations/forms and are saved locally; they are not sent to a chat."</p>
+                    <input aria-label="DOCX or PDF file path" style=CONTROL_STYLE placeholder="files/document.pdf" prop:value=move||document_path.get() on:input=move|ev|{document_path.set(event_target_value(&ev));document_next.set(None);document_hash.set(String::new());}/>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||document_path.get().is_empty() on:click=move |_|execute("document_info".into(),json!({"path":document_path.get()}))>"Inspect document"</button>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||document_path.get().is_empty() on:click=move |_|{document_next.set(None);execute("extract_document_text".into(),json!({"path":document_path.get()}));}>"Read body text"</button>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||document_next.get().is_none() on:click=move |_|{if let Some(args)=document_next.get(){execute("extract_document_text".into(),args);}}>"Continue document"</button>
+                    <input aria-label="New PDF preview folder" style=CONTROL_STYLE placeholder="output/pdf-preview" prop:value=move||document_destination.get() on:input=move|ev|document_destination.set(event_target_value(&ev))/>
+                    <textarea aria-label="PDF page range and size JSON" style=CONTROL_STYLE rows="2" prop:value=move||document_pages.get() on:input=move|ev|document_pages.set(event_target_value(&ev))></textarea>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||document_hash.get().is_empty()||document_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&document_pages.get()){Ok(mut args) if args.is_object()=>{args["path"]=json!(document_path.get());args["destination"]=json!(document_destination.get());args["expected_sha256"]=json!(document_hash.get());execute("render_document_pages".into(),args);},_=>error.set(Some("Enter a JSON object with first_page, optional last_page and max_dimension.".into()))}}>"Request PDF page previews"</button>
                 </details>
                 {move||{
                     let value=result.get();

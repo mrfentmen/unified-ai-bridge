@@ -1,10 +1,10 @@
-# Read DOCX body text
+# Read documents and preview PDF pages
 
-The 0.5.13 candidate adds `document_info` and `extract_document_text` for a declared DOCX subset. In **Files, preview and restore → Read DOCX text**, inspect the file, read its body text and continue with the returned byte offset. Continuation requires the original SHA-256; a changed document refuses the next chunk.
+The 0.5.15 candidate extends `document_info` and `extract_document_text` from DOCX body text to PDF embedded text on macOS, and adds approved `render_document_pages` previews. In **Files, preview and restore → Read documents and preview PDF pages**, inspect the file, read text and continue with the returned byte offset. Continuation requires the original SHA-256; a changed document refuses the next chunk. Live browser acceptance is pending; the normal installation remains 0.5.7.
 
-This reader does not render pages or edit Word files. PDF, legacy DOC, macro-enabled DOCM, OCR and page rendering return an explicit unavailable result. Word layout is not stored as a reliable page map, so the response leaves `page_count` null. Explicit page-break counts are reported separately and must not be treated as page counts.
+Legacy DOC, macro-enabled DOCM, OCR and Word layout rendering remain unavailable. Word layout is not stored as a reliable page map, so DOCX responses leave `page_count` null. Explicit page-break counts must not be treated as page counts. No document editor is implied by these readers.
 
-## What is extracted
+## DOCX body subset
 
 - Main-body paragraphs in package order, with tabs and line breaks. Table-cell paragraphs are flattened into the same text stream.
 - Text inside inserted/moved-to tracked changes; deleted/moved-from text is omitted. A tracked-changes flag records that this choice was made.
@@ -15,7 +15,7 @@ Formatting, numbering/bullet markers, hidden-text visibility and exact reading l
 
 The current subset requires UTF-8 XML, the transitional WordprocessingML namespace and a non-macro main part at `word/document.xml`. Macro-bearing packages are refused. Strict-namespace documents, other encodings or unusual package structures may be unsupported. No package relationship is resolved; external references remain inert even if their XML names a file or network URL.
 
-## Bounds and isolation
+## DOCX bounds and isolation
 
 The host reads an approved regular workspace file through the existing descriptor-based reader. Symlinks, hard links, traversal and private paths remain denied. It sends bytes to a disposable worker in the same native executable; the worker does not load bridge configuration or receive filesystem paths.
 
@@ -29,4 +29,24 @@ The host reads an approved regular workspace file through the existing descripto
 
 Five tests exercise Unicode/multiline chunks, omitted parts, revisions, cached fields, inert relationships, hostile XML/packages, stale input, protected paths and response limits. A public DOCX sample is also compared with macOS textutil's independent text extraction. Neither test establishes layout fidelity or browser integration.
 
-UAB-16 remains open for PDF support, rendered-page inspection, additional Word content and live browser acceptance. No rendering button or unsupported PDF tool is presented as working.
+## PDF text and previews on macOS
+
+The native host uses Rust bindings to system PDFKit for embedded text and CoreGraphics for page-content rendering. Linux returns `unsupported` for PDF operations; DOCX stays available. No helper interpreter, external PDF executable or provider API is installed. The APIs used are available on Intel and Apple Silicon macOS, but a physical old Intel Mac and the final minimum supported OS remain release checks.
+
+`document_info` reports physical page count, crop-box dimensions in points and rotation. It does not scan for text or declare that a document is scanned. `extract_document_text` returns the embedded text in physical page order. Each chunk includes `page_ranges`: one-based physical page numbers with UTF-8 start/end byte offsets **within the returned text**. `pages_without_text` identifies pages with no extractable text; these can be scans, vector outlines, blank pages or unsupported encodings. This is not OCR. PDFKit's reading order and hidden-text visibility can differ from the visible page.
+
+`render_document_pages` accepts the inspected source hash, a new destination folder, `first_page`, optional inclusive `last_page`, and `max_dimension` (default 1200). It creates `page-0001.png` and similar physical-page names after explicit approval. Crop and rotation are honored, aspect ratio preserved, with an opaque white background. CoreGraphics renders page content only: annotations, interactive form appearances, attachments and active content are omitted. It never opens links, runs PDF actions/JavaScript, or follows an external document URL. This preview subset is not a complete interactive PDF viewer.
+
+Source hashes and current path/workspace policy are checked again after approval and rendering. Every output uses an isolated staging folder and create-only publication. Existing destinations, changed sources, private paths, research datasets, another research agent's folder, symlinks and hard links are refused. Approval denial writes no output. The receipt names each PNG, its dimensions and SHA-256; creation is audited. Saving previews does **not** deliver an image to a chat or establish model visual understanding.
+
+PDF bounds:
+
+- Input: 16 MiB, 1–200 physical pages; encrypted or copy-restricted PDFs are refused. No password workflow.
+- Text: 256,000 UTF-8 bytes across the document; chunks use the same 256–24,000 requested byte and 48,000 serialized-result budgets as DOCX. Oversized text fails explicitly rather than omitting later pages.
+- Rendering: 1–4 consecutive pages per request, 128–1600 pixels on the longest side, no page dimension over 20,000 points, 16 MiB total PNG output. Native decoder working memory is not an independently enforced RSS limit.
+- Worker: two shared document slots, six CPU seconds, ten wall seconds, bounded pipes and disabled core dumps. Crash/timeout becomes a tool error; the host remains available.
+- The PDF worker receives bytes, not a workspace path or bridge config. A macOS Seatbelt policy denies network access, file writes and subprocess execution; file-content reads are limited to system libraries/resources and fonts. If restrictions cannot be installed, PDF parsing is refused. This uses the deprecated system sandbox API; future macOS removal would produce an explicit unavailable result. It does not claim a complete exploit-proof sandbox or protect arbitrary external programs.
+
+Six PDF integration tests cover text pagination/page attribution, empty pages, crop/rotation/pixel results, source preservation, approvals and policy changes, malformed/encrypted/oversized input, protected research destinations and links. A separate worker test checks actual filesystem/network denials. Public-document evidence and rendered-page inspection are recorded in [verification](VERIFICATION.md).
+
+UAB-16 remains open for live browser acceptance, OCR, DOCX rendering and additional Word content.
