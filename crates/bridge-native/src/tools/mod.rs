@@ -12,6 +12,7 @@ pub mod git;
 pub mod git_review;
 pub mod tables;
 pub mod documents;
+pub mod document_create;
 pub mod pdf;
 pub mod workbooks;
 pub mod network;
@@ -459,7 +460,7 @@ pub async fn dispatch(
                 | catalog::Category::Collaboration
         )
         && !crate::grants::TOOLS.contains(&tool)
-        && !matches!(tool, "replace_file" | "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch" | "create_archive" | "extract_archive" | "transform_image" | "render_document_pages" | "write_sheet_range")
+        && !matches!(tool, "replace_file" | "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch" | "create_archive" | "extract_archive" | "transform_image" | "render_document_pages" | "write_sheet_range" | "create_document")
     {
         match app.store.write_grant(&app.workspace.id(), session_id) {
             Ok(None) => {}
@@ -544,6 +545,7 @@ pub async fn dispatch(
         "git_show" => git_review::show(&context, arguments).await,
         "read_table" => tables::read(&context, arguments).await,
         "query_table" => tables::query(&context, arguments).await,
+        "create_document" => document_create::create(&context, arguments).await,
         "document_info" => documents::info(&context, arguments).await,
         "integration_status" => crate::integrations::status(&context,arguments).await,
         "fetch_url_text" => network::fetch(&context,arguments).await,

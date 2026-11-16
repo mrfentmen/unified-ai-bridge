@@ -565,6 +565,9 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let document_hash=RwSignal::new(String::new());
     let document_destination=RwSignal::new(String::new());
     let document_pages=RwSignal::new("{\"first_page\":1,\"last_page\":1,\"max_dimension\":1200}".to_string());
+    let report_destination=RwSignal::new(String::new());
+    let report_title=RwSignal::new(String::new());
+    let report_blocks=RwSignal::new("[{\"type\":\"paragraph\",\"text\":\"Write your report here.\"}]".to_string());
     let code_path=RwSignal::new(String::new());
     let code_query=RwSignal::new(String::new());
     let code_cursor=RwSignal::new(serde_json::Value::Null);
@@ -772,6 +775,14 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <input aria-label="New PDF preview folder" style=CONTROL_STYLE placeholder="output/pdf-preview" prop:value=move||document_destination.get() on:input=move|ev|document_destination.set(event_target_value(&ev))/>
                     <textarea aria-label="PDF page range and size JSON" style=CONTROL_STYLE rows="2" prop:value=move||document_pages.get() on:input=move|ev|document_pages.set(event_target_value(&ev))></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||document_hash.get().is_empty()||document_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&document_pages.get()){Ok(mut args) if args.is_object()=>{args["path"]=json!(document_path.get());args["destination"]=json!(document_destination.get());args["expected_sha256"]=json!(document_hash.get());execute("render_document_pages".into(),args);},_=>error.set(Some("Enter a JSON object with first_page, optional last_page and max_dimension.".into()))}}>"Request PDF page previews"</button>
+                </details>
+                <details><summary>"Create a PDF report"</summary>
+                    <p>"Approve a new A4 PDF with embedded fonts. Simple Latin text, headings, paragraphs and bullets; up to 40 pages. Existing files are preserved. DOCX, slides, images and complex scripts are not supported."</p>
+                    <input aria-label="New PDF report destination" style=CONTROL_STYLE placeholder="output/report.pdf" prop:value=move||report_destination.get() on:input=move|ev|report_destination.set(event_target_value(&ev))/>
+                    <input aria-label="PDF report title" style=CONTROL_STYLE placeholder="Report title" prop:value=move||report_title.get() on:input=move|ev|report_title.set(event_target_value(&ev))/>
+                    <p>"Content blocks: heading, paragraph or bullet with text; page_break starts a new page."</p>
+                    <textarea aria-label="PDF report content blocks JSON" style=CONTROL_STYLE rows="5" prop:value=move||report_blocks.get() on:input=move|ev|report_blocks.set(event_target_value(&ev))></textarea>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||report_destination.get().is_empty()||report_title.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&report_blocks.get()){Ok(blocks) if blocks.is_array()=>execute("create_document".into(),json!({"destination":report_destination.get(),"format":"pdf","template":"report","title":report_title.get(),"blocks":blocks})),_=>error.set(Some("Enter an array of report content blocks.".into()))}}>"Request PDF creation"</button>
                 </details>
                 {move||{
                     let value=result.get();

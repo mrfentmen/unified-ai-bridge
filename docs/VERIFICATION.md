@@ -2,6 +2,26 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## PDF report creation candidate 0.5.19 — November 16, 2026
+
+Source and isolated package are 0.5.19. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 209 passed, 0 failed; one separately verified long command test omitted from routine runs |
+| Seven dedicated checks | Deterministic embedded-font layout, line/page bounds, NFC/Unicode extraction, orphan/break limits, strict schema, unsupported scripts/formats, approval denial, overwrite/symlink/parent changes, workspace lock, research/private path protections |
+| Isolated package | Native/tooling/WASM release builds exited 0; source, package and manifest versions matched 0.5.19. The added popup/side-panel creation form was included in the final WASM rebuild |
+| Packaged Native Messaging | Created a three-page project brief from actual README/documentation content. PDFKit reopened it, extracted text including Résumé/café/Ångström and rendered all three physical pages |
+| Visual inspection | Opened every rendered PNG: headings, paragraphs, hanging bullets, accents and page numbers were legible, with consistent margins and no clipping/overlap |
+| Denials/restart | Denied creation wrote nothing. Existing destination, traversal and unsupported glyph refused. File/hash preserved and PDF reopened after host restart |
+| Installed checks | 41 self-tests passed; doctor passed config/manifest/binary/SQLite and verified 30 matching audit entries |
+| Previous CI | 0.5.17 run 43957615402 passed Linux, Intel tests and Intel packaging. 0.5.18 run 43961212786 passed Linux and Intel tests; packaging was still running when checked |
+| Browser | New tool/form compiled; provider delivery, approval interaction and loaded 0.5.19 browser build remain unverified |
+
+Created file: `/private/tmp/uab-0519-build-ou5lpw7j/scratch-general/output/bridge-project-brief.pdf`, 1,203,686 bytes, SHA256 `8a101b348acfaa8e640325f525c42f2f2724e8b87a35a28331b63314764fcf26`. Installed native SHA256 `ac851ed58cccee45770086aa4458741eb16bec3fe53ff238173c65e4049401b7`; final WASM SHA256 `6d155b7e97cf922bef44ee95fde8d8c8f87f26a7c5ce26123852786430687ff8`. Raw framed messages, logs, PDF and page PNGs remain under ignored `docs/evidence/0.5.19/`. Tests use labeled fixtures; the packaged report uses repository documentation and is not a provider integration.
+
+The output format is a fixed simple Latin PDF report, not arbitrary Word/PDF editing. DOCX authoring remains pending because its required bundled renderer/LibreOffice runtime is unavailable. PPTX, conversion, richer layout and live acceptance remain open. See [report semantics](DOCUMENT-CREATION.md).
+
 ## Public network candidate 0.5.18 — November 16, 2026
 
 The source and isolated package are 0.5.18. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
@@ -17,7 +37,7 @@ The source and isolated package are 0.5.18. Normal Chrome files/native installat
 | Refusals | Disabled access, denied fetch/download, private loopback, query string, ungranted origin, outside-root destination and repeat destination all refused. Denied download created no file; disable survived restart |
 | Audit/privacy | Doctor verified 41 matching audit entries and SQLite integrity. Raw PDF URL path and the refused query value did not appear in audit or host log |
 | Installed self-test | 41 passed, 0 failed |
-| Previous CI | Task candidate 0.5.17 run 43957615402 passed Linux and Intel tests; packaging was still running when this record was written |
+| Previous CI | Task candidate 0.5.17 run 43957615402 passed Linux tests, Intel tests and Intel packaging (completion rechecked during 0.5.19 work) |
 | Browser | Network controls compiled. Live approval/control interaction and provider delivery remain unverified |
 
 Saved file: `/private/tmp/uab-0518-build-5i5am12_/scratch-general/output/public-dummy.pdf`, SHA-256 `3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4`. Public source: [W3C dummy.pdf](https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf). Installed native SHA-256: `bf08449e04fd00005a7003e2b830f8cbe761f7eea6bf2f20de9965dca493bfc5`. Logs, framed messages and PDF remain local under ignored `docs/evidence/0.5.18/`. Local TCP fixtures exercise transport internals and are explicitly separate from production public-address checks; they are not provider integrations.
