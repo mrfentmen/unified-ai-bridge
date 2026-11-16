@@ -5,7 +5,7 @@ From an already configured checkout, run `cargo +stable bridge-deploy`.
 ## First installation
 
 Install Rust through rustup, the Xcode Command Line Tools, and Google Chrome.
-Use a current stable toolchain; the recorded 0.4.6 build used Rust 1.99.1.
+Use a current stable toolchain; the recorded 0.4.7 build used Rust 1.99.1.
 
 ```sh
 rustup toolchain install stable

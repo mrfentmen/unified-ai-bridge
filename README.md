@@ -58,7 +58,7 @@ The implementation is Rust throughout: **Oxichrome** generates the extension pac
 
 | Website | What has been verified | Notes |
 | --- | --- | --- |
-| ChatGPT | Read → create → result, navigation and background connection | Live loop verified on 0.4.0; not rerun on 0.4.6 |
+| ChatGPT | Read → create → result, navigation and background connection | Live loop verified on 0.4.0; not rerun on 0.4.7 |
 | Claude | Read → create → result | Live loop verified on 0.4.0; the model omitted a requested punctuation mark |
 | DeepSeek | Read → create → result, navigation and background connection | Live loop verified on 0.4.0 |
 | Gemini | Read → create → result, navigation and background connection | Live loop verified on 0.4.0 |
@@ -158,7 +158,7 @@ If a panel looks disconnected, first compare its build number with the extension
 
 If the composer contains your draft, the bridge leaves it alone. Finish or save that draft before sending a pending result. A selector warning means the website layout needs attention; it is not a reason to broaden file permissions.
 
-The latest recorded checks passed **73 workspace tests and 41 host self-tests**. Details, boundaries, and a repeatable browser test are in [VERIFICATION.md](docs/VERIFICATION.md).
+The 0.4.7 local checks passed **81 workspace tests and 41 host self-tests**, plus live manual approval, trash and restore checks. [GitHub CI](https://github.com/mrfentmen/unified-ai-bridge/actions/workflows/ci.yml) repeats the automated checks and packaging on clean runners. Details, boundaries, and a repeatable browser test are in [VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Project layout
 
