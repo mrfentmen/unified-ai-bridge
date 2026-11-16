@@ -1,6 +1,35 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.4**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The full provider acceptance matrix below remains historical.
+These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.5**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The full provider acceptance matrix below remains historical.
+
+## ZIP archive controls 0.5.5 — November 16, 2026
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 121 passed, 0 failed; one existing slow command test excluded from routine runs |
+| Archive tests | Seven integration tests plus two staging/limit unit tests passed: real source/binary round trip; approval denial; changed sources; locked workspace; path traversal, symlinks and protected areas; case/Unicode collisions; CRC failure after a staged first file; output cleanup; entry/count/depth/expansion limits; unsupported encrypted/ZIP64 inputs |
+| Installed selftest | 41 passed, 0 failed in a temporary workspace |
+| Build/install | Native/tooling and WASM release exit 0; source, package and generated manifest all 0.5.5, protocol 6; installed binary hash and native manifest verified |
+| Loaded build | Chrome extension card, Kimi shadow panel and fresh host handshake agree on 0.5.5 |
+| Live creation | Extension controls approved a ZIP containing existing Rust source, Markdown and the earlier Kimi-generated SVG; output was a real 734-byte ZIP |
+| Live extraction | Inspection returned three entries and the archive hash. Approval created a new folder; all extracted bytes and hashes matched sources and ZIP entries. No extracted file had executable bits |
+| Live denial | Denying a second extraction through extension controls returned an approval denial and left its destination absent |
+| Final doctor | Configuration, native manifest, installed binary, SQLite integrity and audit chain passed |
+| Limitations | ZIP32/Stored/Deflate subset only; no automatic nested extraction or large-binary undo. Hard process kills can leave a named staging directory for inspection. No new provider model-loop or permanent macOS consent claim |
+
+The live ZIP was `files/bridge-055-project.zip`, SHA-256 `72c818897d99a2fd3decb82c793f6f1a710f2e4b819e4fd5bff361306bc03f50`. Its three sources totaled **397 bytes**: `files/general-proof.rs` (33), `files/bridge-050-kimi.svg` (311), and `files/bridge-053-panel.md` (53). All three were recovered byte-for-byte under `files/bridge-055-unpacked/`. Independent ZIP reading also verified their CRCs.
+
+Observed host log excerpts (UTC, private identifiers omitted):
+
+```text
+17:18:15.735 extension hello (0.5.5)
+17:18:15.747 registered Kimi ... extension=Some("0.5.5")
+17:19:44.128 panel tool create_archive ok ... provider=kimi ... workspace=".../bridge-general-scratch"
+17:19:57.661 panel tool list_archive ok ... path=Some("files/bridge-055-project.zip")
+17:20:47.782 panel tool extract_archive ok ... provider=kimi ... duration_ms=27531
+```
+
+Raw evidence is retained in ignored `docs/evidence/0.5.5/`. See [archive controls and limits](ARCHIVES.md). These are panel/host/filesystem checks; current-build conversation delivery and the full provider matrix remain separate acceptance work.
 
 ## Multi-file patch controls 0.5.4 — November 16, 2026
 

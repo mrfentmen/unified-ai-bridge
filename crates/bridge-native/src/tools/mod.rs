@@ -1,4 +1,5 @@
 pub mod artifacts;
+pub mod archives;
 pub mod collaboration;
 pub mod commands;
 pub mod desktop;
@@ -447,7 +448,7 @@ pub async fn dispatch(
                 | catalog::Category::Collaboration
         )
         && !crate::grants::TOOLS.contains(&tool)
-        && !matches!(tool, "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch")
+        && !matches!(tool, "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch" | "create_archive" | "extract_archive")
     {
         match app.store.write_grant(&app.workspace.id(), session_id) {
             Ok(None) => {}
@@ -460,6 +461,9 @@ pub async fn dispatch(
         }
     }
     let result = match tool {
+        "list_archive" => archives::list(&context, arguments).await,
+        "extract_archive" => archives::extract(&context, arguments).await,
+        "create_archive" => archives::create(&context, arguments).await,
         "preview_patch" => patches::preview(&context, arguments).await,
         "apply_patch" => patches::apply(&context, arguments).await,
         "patch_status" => patches::status(&context, arguments).await,
@@ -536,6 +540,7 @@ pub async fn dispatch(
             if matches!(
                 tool,
                 "preview_document"
+                    | "list_archive"
                     | "patch_status"
                     | "list_jobs"
                     | "job_status"

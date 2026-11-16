@@ -507,6 +507,10 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let patch_id = RwSignal::new(String::new());
     let patch_preview_json = RwSignal::new(String::new());
     let patch_session = RwSignal::new(String::new());
+    let zip_path = RwSignal::new(String::new());
+    let zip_destination = RwSignal::new(String::new());
+    let zip_files = RwSignal::new("[]".to_string());
+    let zip_hash = RwSignal::new(String::new());
     let result = RwSignal::new(serde_json::Value::Null);
     let busy = RwSignal::new(false);
     let displayed_workspace = RwSignal::new(String::new());
@@ -519,6 +523,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             patch_id.set(String::new());
             patch_preview_json.set(String::new());
             patch_session.set(String::new());
+            zip_hash.set(String::new());
             expected.set(None);
             result.set(serde_json::Value::Null);
         }
@@ -558,6 +563,9 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                         patch_id.set(value["data"]["patch_id"].as_str().unwrap_or_default().into());
                         patch_preview_json.set(serde_json::to_string(&args).unwrap_or_default());
                         patch_session.set(selected.clone());
+                    }
+                    if value["status"]=="ok" && name=="list_archive" && args["path"].as_str()==Some(zip_path.get_untracked().as_str()) {
+                        zip_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());
                     }
                     if value["status"]!="ok" {error.set(Some(value["error"].as_str().unwrap_or("Tool failed").to_string()));}
                     else{error.set(None);}
@@ -601,6 +609,16 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                         <button style=CONTROL_STYLE disabled=move||busy.get()||patch_id.get().is_empty() on:click=move |_|execute("patch_status".into(),json!({"patch_id":patch_id.get()}))>"Batch status"</button>
                         <button style=CONTROL_STYLE disabled=move||busy.get()||patch_id.get().is_empty() on:click=move |_|execute("restore_patch".into(),json!({"patch_id":patch_id.get()}))>"Request batch restore"</button>
                     </div>
+                </details>
+                <details><summary>"ZIP archives"</summary>
+                    <p>"ZIP32, Stored/Deflate. Up to 256 entries, 16 MiB per file, 64 MiB expanded. Inspect before extraction. Writes require separate approval; no overwrite or execution."</p>
+                    <input aria-label="ZIP file path" style=CONTROL_STYLE placeholder="files/project.zip" prop:value=move||zip_path.get() on:input=move|ev|{zip_path.set(event_target_value(&ev));zip_hash.set(String::new());}/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||zip_path.get().is_empty() on:click=move |_|{zip_hash.set(String::new());execute("list_archive".into(),json!({"path":zip_path.get()}));}>"Inspect ZIP"</button>
+                    <div>{move||if zip_hash.get().is_empty(){"Inspect to obtain the archive hash.".into()}else{format!("Inspected SHA256: {}",zip_hash.get())}}</div>
+                    <input aria-label="Archive destination" style=CONTROL_STYLE placeholder="New folder for extraction, or new .zip for creation" prop:value=move||zip_destination.get() on:input=move|ev|zip_destination.set(event_target_value(&ev))/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||zip_hash.get().is_empty()||zip_destination.get().is_empty() on:click=move |_|execute("extract_archive".into(),json!({"path":zip_path.get(),"destination":zip_destination.get(),"expected_sha256":zip_hash.get()}))>"Request ZIP extraction"</button>
+                    <textarea aria-label="Archive source paths JSON" style=CONTROL_STYLE rows="3" placeholder="[\"files/main.rs\",\"notes/readme.md\"]" prop:value=move||zip_files.get() on:input=move|ev|zip_files.set(event_target_value(&ev))></textarea>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||zip_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&zip_files.get()){Ok(paths)=>execute("create_archive".into(),json!({"paths":paths,"destination":zip_destination.get()})),Err(err)=>error.set(Some(format!("Invalid file list JSON: {err}")))}}>"Request ZIP creation"</button>
                 </details>
                 <details><summary>"Run any available tool"</summary>
                     <select aria-label="Tool" style=CONTROL_STYLE on:change=move|ev|tool.set(event_target_value(&ev))>

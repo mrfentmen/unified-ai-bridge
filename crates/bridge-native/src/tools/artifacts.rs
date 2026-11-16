@@ -91,7 +91,7 @@ fn id() -> String {
 
 /// Walk from / using directory descriptors. Neither the leaf nor an ancestor
 /// can redirect an authorized source/destination through a symlink.
-fn open_at(dir: &File, name: &std::ffi::OsStr, flags: i32) -> Result<File, ToolFailure> {
+pub(super) fn open_at(dir: &File, name: &std::ffi::OsStr, flags: i32) -> Result<File, ToolFailure> {
     let name = std::ffi::CString::new(name.as_bytes())
         .map_err(|_| ToolFailure::InvalidArguments("NUL in file name".into()))?;
     // SAFETY: borrowed descriptor and NUL-terminated name live for this call.
@@ -110,7 +110,7 @@ fn open_at(dir: &File, name: &std::ffi::OsStr, flags: i32) -> Result<File, ToolF
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
-fn directory(path: &Path) -> Result<File, ToolFailure> {
+pub(super) fn directory(path: &Path) -> Result<File, ToolFailure> {
     if !path.is_absolute() {
         return Err(ToolFailure::InvalidArguments(
             "absolute download path required".into(),
