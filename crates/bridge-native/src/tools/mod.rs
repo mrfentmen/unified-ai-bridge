@@ -6,6 +6,7 @@ pub mod development;
 pub mod file_extra;
 pub mod filesystem;
 pub mod recovery;
+pub mod patches;
 pub mod research;
 pub mod system;
 
@@ -446,7 +447,7 @@ pub async fn dispatch(
                 | catalog::Category::Collaboration
         )
         && !crate::grants::TOOLS.contains(&tool)
-        && !matches!(tool, "delete_file" | "restore_change" | "import_artifact")
+        && !matches!(tool, "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch")
     {
         match app.store.write_grant(&app.workspace.id(), session_id) {
             Ok(None) => {}
@@ -459,6 +460,10 @@ pub async fn dispatch(
         }
     }
     let result = match tool {
+        "preview_patch" => patches::preview(&context, arguments).await,
+        "apply_patch" => patches::apply(&context, arguments).await,
+        "patch_status" => patches::status(&context, arguments).await,
+        "restore_patch" => patches::restore(&context, arguments).await,
         "list_jobs" => crate::jobs::list(&context, arguments).await,
         "job_status" => crate::jobs::status(&context, arguments).await,
         "read_job_output" => crate::jobs::output(&context, arguments).await,
@@ -531,6 +536,7 @@ pub async fn dispatch(
             if matches!(
                 tool,
                 "preview_document"
+                    | "patch_status"
                     | "list_jobs"
                     | "job_status"
                     | "read_job_output"

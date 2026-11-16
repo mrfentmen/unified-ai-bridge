@@ -13,13 +13,13 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.3** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.4** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
 - **Work on ordinary folders.** Read, search, create, edit, append, copy, compare, and organize text files. Batch reads, glob matching, and file trees keep larger tasks manageable.
 - **Bring downloaded chat files into a project.** Select a completed Chrome download, share it with one conversation, then approve a copy into the workspace. Images, PDFs, ZIPs and other files retain their bytes; imports check hashes and refuse overwrites. [How browser files work](docs/BROWSER-FILES.md).
-- **Review and recover edits.** Preview replacements, check file hashes before overwriting, inspect change history, and request a restore. Deletion moves files to workspace trash and requires approval.
+- **Review and recover edits.** Preview single-file or [multi-file changes](docs/PATCHES.md), check hashes before overwriting, inspect recovery receipts, and request a restore. Deletion moves files to workspace trash and requires approval.
 - **Use your own project commands.** Grant a specific executable, arguments, working directory, timeout, and output limit. The chat selects an allowed command; it cannot invent a shell command.
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.

@@ -28,6 +28,19 @@ pub struct Change {
 }
 
 impl Change {
+    pub(crate) fn before_bytes(&self) -> Result<Option<Vec<u8>>, ToolFailure> {
+        let before = self
+            .before_base64
+            .as_ref()
+            .map(|b| STANDARD.decode(b).map_err(internal))
+            .transpose()?;
+        if hash(&before) != self.before_sha256 {
+            return Err(ToolFailure::Internal(
+                "recovery backup failed SHA256 verification".into(),
+            ));
+        }
+        Ok(before)
+    }
     pub fn metadata(&self) -> Value {
         json!({"change_id":self.id,"workspace_id":self.workspace_id,"created_at":self.created_at,
             "agent":self.agent,"path":self.path,"operation":self.operation,"before_sha256":self.before_sha256,
@@ -98,6 +111,60 @@ pub async fn mutate(
     content: Option<&[u8]>,
     force_approval: bool,
 ) -> Result<(ResolvedPath, AtomicWrite, Change), ToolFailure> {
+    mutate_inner(ctx, tool, raw, expected, content, force_approval, None).await
+}
+
+pub(crate) struct ReviewEntry {
+    pub path: String,
+    pub expected: Option<String>,
+    pub after: Option<String>,
+    pub change_id: String,
+}
+/// Opaque, in-memory authorization for an exact batch. It cannot be supplied
+/// by a model, persisted as a reusable permission, or applied to another root.
+pub(crate) struct BatchReview {
+    workspace: String,
+    session: String,
+    agent: String,
+    tool: String,
+    entries: Vec<ReviewEntry>,
+}
+pub(crate) async fn review_batch(
+    ctx: &ToolContext<'_>,
+    tool: &str,
+    entries: Vec<ReviewEntry>,
+    reason: &str,
+) -> Result<BatchReview, ToolFailure> {
+    ctx.app
+        .request_approval(ctx.session_id, ctx.agent, tool, reason, None)
+        .await?;
+    Ok(BatchReview {
+        workspace: ctx.app.workspace.id(),
+        session: ctx.session_id.into(),
+        agent: ctx.agent.dir().into(),
+        tool: tool.into(),
+        entries,
+    })
+}
+pub(crate) async fn mutate_reviewed(
+    ctx: &ToolContext<'_>,
+    tool: &str,
+    raw: &str,
+    expected: Option<&str>,
+    content: Option<&[u8]>,
+    review: &BatchReview,
+) -> Result<(ResolvedPath, AtomicWrite, Change), ToolFailure> {
+    mutate_inner(ctx, tool, raw, expected, content, true, Some(review)).await
+}
+async fn mutate_inner(
+    ctx: &ToolContext<'_>,
+    tool: &str,
+    raw: &str,
+    expected: Option<&str>,
+    content: Option<&[u8]>,
+    force_approval: bool,
+    review: Option<&BatchReview>,
+) -> Result<(ResolvedPath, AtomicWrite, Change), ToolFailure> {
     if content.is_some_and(|b| b.len() as u64 > MAX_READ_BYTES) {
         return Err(ToolFailure::InvalidArguments(
             "content exceeds 1 MiB".into(),
@@ -105,6 +172,35 @@ pub async fn mutate(
     }
     let initial = ctx.resolve_any(raw)?;
     ctx.check_read(tool, &initial)?;
+    let reviewed_id = if let Some(review) = review {
+        if review.workspace != ctx.app.workspace.id()
+            || review.session != ctx.session_id
+            || review.agent != ctx.agent.dir()
+            || review.tool != tool
+        {
+            return Err(ToolFailure::PermissionDenied(
+                "batch review context does not match".into(),
+            ));
+        }
+        let after = content.map(fsops::sha256_bytes);
+        Some(
+            review
+                .entries
+                .iter()
+                .find(|e| {
+                    e.path == initial.display()
+                        && e.expected.as_deref() == expected
+                        && e.after == after
+                })
+                .ok_or_else(|| {
+                    ToolFailure::PermissionDenied("mutation is not in the approved batch".into())
+                })?
+                .change_id
+                .clone(),
+        )
+    } else {
+        None
+    };
     let access = if content.is_some() {
         Access::Write
     } else {
@@ -131,7 +227,7 @@ pub async fn mutate(
     );
     let approved = force_approval || matches!(decision, Decision::Approval(_));
     let scoped = crate::grants::applicable(ctx, tool, &initial, content.map_or(0, |b| b.len()))?;
-    if approved && (!scoped || force_approval) {
+    if approved && reviewed_id.is_none() && (!scoped || force_approval) {
         ctx.app
             .request_approval(
                 ctx.session_id,
@@ -178,7 +274,7 @@ pub async fn mutate(
     let mut random = [0u8; 16];
     rand::rngs::OsRng.fill_bytes(&mut random);
     let mut change = Change {
-        id: hex::encode(random),
+        id: reviewed_id.unwrap_or_else(|| hex::encode(random)),
         workspace_id: ctx.app.workspace.id(),
         created_at: App::now(),
         agent: ctx.agent.dir().into(),

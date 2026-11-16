@@ -500,6 +500,13 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let preview_target = RwSignal::new(String::new());
     let preview_content = RwSignal::new(String::new());
     let preview_workspace = RwSignal::new(String::new());
+    let patch_json = RwSignal::new(
+        "{\"operations\":[{\"path\":\"files/example.txt\",\"content\":\"New text\\n\"}]}"
+            .to_string(),
+    );
+    let patch_id = RwSignal::new(String::new());
+    let patch_preview_json = RwSignal::new(String::new());
+    let patch_session = RwSignal::new(String::new());
     let result = RwSignal::new(serde_json::Value::Null);
     let busy = RwSignal::new(false);
     let displayed_workspace = RwSignal::new(String::new());
@@ -509,6 +516,9 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             displayed_workspace.set(active);
             preview_target.set(String::new());
             preview_workspace.set(String::new());
+            patch_id.set(String::new());
+            patch_preview_json.set(String::new());
+            patch_session.set(String::new());
             expected.set(None);
             result.set(serde_json::Value::Null);
         }
@@ -522,7 +532,13 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             .sessions
             .iter()
             .find(|s| s.id == selected)
-            .or_else(|| current.sessions.first())
+            .or_else(|| {
+                if selected.is_empty() {
+                    current.sessions.first()
+                } else {
+                    None
+                }
+            })
             .map(|s| s.id.clone());
         let Some(selected) = selected else {
             error.set(Some("Connect a provider session first; its filesystem permissions will apply to this manual call.".into()));
@@ -538,6 +554,11 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                         expected.set(value["data"]["expected_sha256"].as_str().map(str::to_owned));preview_target.set(args["path"].as_str().unwrap_or_default().into());preview_content.set(args["content"].as_str().unwrap_or_default().into());
                         preview_workspace.set(value["data"]["workspace_id"].as_str().unwrap_or_default().into());
                     }
+                    if value["status"]=="ok" && name=="preview_patch" {
+                        patch_id.set(value["data"]["patch_id"].as_str().unwrap_or_default().into());
+                        patch_preview_json.set(serde_json::to_string(&args).unwrap_or_default());
+                        patch_session.set(selected.clone());
+                    }
                     if value["status"]!="ok" {error.set(Some(value["error"].as_str().unwrap_or("Tool failed").to_string()));}
                     else{error.set(None);}
                     result.set(value);
@@ -551,7 +572,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
         <details style="border:1px solid #304451;padding:8px;margin-bottom:10px">
             <summary>"Files, preview and restore"</summary>
             <div style="display:grid;gap:6px;margin-top:8px">
-                <label>"Use session permissions "<select style=CONTROL_STYLE on:change=move|ev|session.set(event_target_value(&ev))>
+                <label>"Use session permissions "<select style=CONTROL_STYLE on:change=move|ev|{session.set(event_target_value(&ev));preview_target.set(String::new());patch_preview_json.set(String::new());}>
                     <option value="">"First connected session"</option>
                     {move||status.get().sessions.into_iter().map(|s|view!{<option value=s.id>{format!("{} · tab {}",s.agent,s.tab_id)}</option>}).collect_view()}
                 </select></label>
@@ -570,6 +591,17 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     let id=change["change_id"].as_str().unwrap_or_default().to_string();
                     view!{<div>{format!("{} · {} · {} · {}",change["created_at"],change["operation"],change["path"],change["state"])}<button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("restore_change".into(),json!({"change_id":id}))>"Request restore"</button></div>}
                 }).collect_view()}
+                <details><summary>"Changes across files"</summary>
+                    <p>"Preview up to 20 UTF-8 files. Include expected_sha256 for existing files. Apply and restore each require approval; files commit separately."</p>
+                    <textarea aria-label="Patch operations JSON" style=CONTROL_STYLE rows="6" prop:value=move||patch_json.get() on:input=move|ev|{patch_json.set(event_target_value(&ev));patch_preview_json.set(String::new());}></textarea>
+                    <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|match serde_json::from_str(&patch_json.get()){Ok(args)=>execute("preview_patch".into(),args),Err(err)=>error.set(Some(format!("Invalid patch JSON: {err}")))}>"Preview batch"</button>
+                    <input aria-label="Patch ID" style=CONTROL_STYLE placeholder="Preview or saved patch ID" prop:value=move||patch_id.get() on:input=move|ev|{patch_id.set(event_target_value(&ev));patch_preview_json.set(String::new());}/>
+                    <div style="display:flex;gap:5px;flex-wrap:wrap">
+                        <button style=CONTROL_STYLE disabled=move||{busy.get()||patch_id.get().is_empty()||patch_preview_json.get().is_empty()||serde_json::from_str::<serde_json::Value>(&patch_json.get()).ok().map(|v|v.to_string()).unwrap_or_default()!=patch_preview_json.get()||!status.get().sessions.iter().any(|s|s.id==patch_session.get())} on:click=move |_|{execute("apply_patch".into(),json!({"patch_id":patch_id.get()}));patch_preview_json.set(String::new());}>"Request batch apply"</button>
+                        <button style=CONTROL_STYLE disabled=move||busy.get()||patch_id.get().is_empty() on:click=move |_|execute("patch_status".into(),json!({"patch_id":patch_id.get()}))>"Batch status"</button>
+                        <button style=CONTROL_STYLE disabled=move||busy.get()||patch_id.get().is_empty() on:click=move |_|execute("restore_patch".into(),json!({"patch_id":patch_id.get()}))>"Request batch restore"</button>
+                    </div>
+                </details>
                 <details><summary>"Run any available tool"</summary>
                     <select aria-label="Tool" style=CONTROL_STYLE on:change=move|ev|tool.set(event_target_value(&ev))>
                         {move||status.get().capabilities["tools"].as_array().cloned().unwrap_or_default().into_iter().map(|entry|{

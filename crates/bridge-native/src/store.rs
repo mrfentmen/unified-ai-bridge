@@ -241,6 +241,7 @@ impl Store {
             CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, session_id TEXT NOT NULL, download_id INTEGER NOT NULL, record TEXT NOT NULL, UNIQUE(workspace_id, session_id, download_id));
             CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS write_grants (workspace_id TEXT NOT NULL, session_id TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(workspace_id,session_id));
+            CREATE TABLE IF NOT EXISTS patches (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, record TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS jobs_owner ON jobs(workspace_id,owner,created_at);
             CREATE TABLE IF NOT EXISTS job_output (job_id TEXT NOT NULL REFERENCES jobs(id), seq INTEGER NOT NULL, stream TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY(job_id,seq));
             "#,
@@ -369,6 +370,13 @@ impl Store {
         conn.execute("INSERT INTO file_changes VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET record=excluded.record",
             params![record.id,record.workspace_id,record.created_at,serde_json::to_string(record)?])?;
         Ok(())
+    }
+    pub fn save_patch(&self, patch:&crate::tools::patches::Patch)->Result<()> {
+        self.conn.lock().expect("store mutex").execute("INSERT INTO patches VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET record=excluded.record",params![patch.id,patch.workspace_id,serde_json::to_string(patch)?])?;Ok(())
+    }
+    pub fn patch(&self,id:&str,workspace:&str)->Result<Option<crate::tools::patches::Patch>> {
+        let raw:Option<String>=self.conn.lock().expect("store mutex").query_row("SELECT record FROM patches WHERE id=?1 AND workspace_id=?2",params![id,workspace],|r|r.get(0)).optional()?;
+        raw.map(|r|serde_json::from_str(&r).map_err(Into::into)).transpose()
     }
 
     pub fn save_artifact(&self, artifact: &crate::tools::artifacts::Artifact) -> Result<()> {

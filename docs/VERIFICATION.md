@@ -1,6 +1,35 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.3**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The full provider acceptance matrix below remains historical.
+These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.4**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The full provider acceptance matrix below remains historical.
+
+## Multi-file patch controls 0.5.4 — November 16, 2026
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 112 passed, 0 failed; the existing slow command acceptance test remains excluded from routine runs (separately passed on 0.5.3) |
+| Patch tests | Eight passed: real multi-file apply/restore and idempotent receipts; approval denial; stale files; conversation ownership; traversal/symlinks; locked/expired previews; research protections; malformed/oversized/binary input; mid-batch path-lock failure and recovery; persisted interruption reconciliation |
+| Installed selftest | 41 passed, 0 failed in a temporary workspace |
+| Build/install | Native/tooling and WASM release exit 0; source, package and generated manifest all 0.5.4, protocol 6; installed binary and exact manifest origin verified |
+| Loaded build | Chrome extension details read 0.5.4, Kimi shadow panel read build/host 0.5.4, fresh host hello and registration recorded 0.5.4 |
+| Live preview/apply | Panel preview listed an existing scratch file and one new file. Approval applied both; exact expected bytes and two committed per-file receipts were read from disk/SQLite |
+| Live restore | A second approval restored the existing file to its original SHA-256 and moved the new file to recoverable trash with matching bytes; restore receipt completed |
+| Live denial | Denying a separate patch through the extension controls returned an approval denial, persisted `denied`, and left its destination absent |
+| Doctor after live work | Configuration, manifest, binary, SQLite integrity and hash-chained audit passed |
+| Provider loop / macOS consent | No new model-driven loop claimed. Kimi preserved its existing draft. Desktop access prompted again after installing the rebuilt host; stable consent remains unresolved |
+
+The applied files were `files/bridge-053-panel.md` (48 bytes) and `files/bridge-054-batch.md` (41 bytes). Restore recovered the first file's exact original SHA-256, `ef33be9af987af8a3d7487595b3360c08d1221c7f7b70ba2552bb05170c57de9`; the second was absent from its original path and present in trash. These are real **panel → host → filesystem** checks, not a provider conversation integration test.
+
+Observed host log excerpts (UTC, private identifiers omitted):
+
+```text
+16:56:30.299 extension hello (0.5.4)
+16:56:30.315 registered Kimi ... extension=Some("0.5.4")
+16:57:36.703 panel tool preview_patch ok ... provider=kimi ... workspace=".../bridge-general-scratch"
+16:58:32.923 panel tool apply_patch ok ... provider=kimi ... duration_ms=27314
+16:59:18.005 panel tool restore_patch ok ... provider=kimi ... duration_ms=27055
+```
+
+Raw local receipts and logs are retained in ignored `docs/evidence/0.5.4/`. GitHub [run 43910319128](https://github.com/mrfentmen/unified-ai-bridge/actions/runs/43910319128) passed Linux tests, Intel macOS tests and Intel extension packaging for the preceding 0.5.3 commit; it does not establish CI acceptance of this newer patch milestone or physical older-Mac compatibility.
 
 ## Bounded jobs and file grants 0.5.3 — November 16, 2026
 
