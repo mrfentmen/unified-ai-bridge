@@ -1,0 +1,30 @@
+/target
+/dist
+/.references
+/.bridge-local
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+.DS_Store
+.bridge-deploy.lock
+/crates/bridge-extension/dist/
+
+# Local verification includes chat transcripts, session IDs, and machine paths.
+/docs/evidence/
+/docs/ROADMAP.md
+
+# Credentials and local runtime state never belong in a public checkout.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.bridge/
+/config.toml
+
+# Recreated by bridge-tooling before packaging.
+/crates/bridge-extension/static/icons/*.png
