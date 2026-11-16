@@ -2,6 +2,27 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## Durable chat-call controls candidate 0.5.17 — November 16, 2026
+
+The source and isolated package are 0.5.17. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 194 passed, 0 failed, one separately verified long job omitted from routine runs |
+| Six task tests | Frozen budgets/reconnect, stop finality, conflicting task identity, workspace/provider separation, pause-resume revision checks, late approval refusal, bounded private reports, expired uncertain requests |
+| Framed integration | Real native process created/read a file, kept pause across restart, returned the saved write result without re-execution, resumed a new read, stopped a pending approval and refused a late approval |
+| Isolated package | WASM/native/tooling release builds exited 0; source/package/manifest/native versions matched 0.5.17 |
+| Packaged write/recovery | Read an actual README copy, approved `output/task-proof.md`, rejected a paused write, restarted and replayed the same write receipt with unchanged bytes. Resume allowed a fresh read; Stop closed another pending write approval |
+| Interrupted approval | Killed the installed host while a second task awaited approval. After its deadline, the same slot returned `request_timeout` and remained unverified; its file was absent and it was never rerun |
+| Report and audit | Saved private mode-0600 report with 3 completed and 2 cancelled requests; completed steps carried audit sequence links. Doctor verified 27 database/file audit entries and SQLite integrity |
+| Installed self-test | 41 passed, 0 failed |
+| Previous CI | XLSX candidate 0.5.16 run 43953697257 passed Linux tests, Intel macOS tests and Intel packaging |
+| Browser | Controls/status propagation compiled. Pause/Resume UI, skipped-reply behavior and live conversation delivery remain unverified |
+
+Created file: `/private/tmp/uab-0517-build-fw064hu6/scratch-general/output/task-proof.md`, SHA-256 `408a5c8474260bfe31b5f9310428ab4be6f54bba52d5eb56f2f07016f44a03db`. Installed native SHA-256: `6e243d5ad72d26d8625a7881b06b100ffb5ac63f17d86c5298daaddad46b564c`; WASM SHA-256: `0923f651cdda9695c8ed48899b8933dc747c1d790849150d2bfbbd4d21fcdf0f`. Logs, framed messages and exported report remain local under ignored `docs/evidence/0.5.17/`.
+
+The report is a snapshot of submitted requests, not whole-task completion. Already executing operations can finish, and background jobs retain separate cancellation. Resume preserves budget without restarting a model or replaying old calls. These are partial UAB-04/06 capabilities; see [semantics and remaining work](OVERNIGHT.md#chat-task-controls-0517-candidate).
+
 ## XLSX read/edit-copy candidate 0.5.16 — November 16, 2026
 
 The source and isolated package are 0.5.16. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.

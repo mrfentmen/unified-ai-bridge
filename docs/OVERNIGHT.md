@@ -1,6 +1,22 @@
 # Bounded work while you are away
 
-The bridge can run an approved command as a background job, save its output, and recover its receipt when Chrome reconnects. It does not yet schedule a whole sequence of AI tasks, resume uncertain edits, or work through a login or account limit on your behalf.
+The bridge can run an approved command as a background job, save its output, and recover its receipt when Chrome reconnects. Candidate 0.5.17 adds durable chat-task admission controls and local task reports. It does not yet schedule a whole sequence of AI tasks, restart a model after a pause, resume uncertain edits, or work through a login or account limit on your behalf.
+
+## Chat task controls (0.5.17 candidate)
+
+The popup and side panel have **Chat task controls and receipts**. Refresh to see up to 100 recent tasks in the selected workspace. Each record belongs to the host-validated provider, conversation, workspace and observed user message. Registration or receiving a tool result does not create a task. Records appear when a task first requests a tool; they do not enumerate planned steps the model has not submitted.
+
+**Pause local calls** blocks new calls and calls waiting for an execution slot. It also closes pending approvals, including when Pause is quickly followed by Resume. A call already executing outside an approval wait may finish. **Resume local calls** permits new response slots with the same remaining budget. It does not send a message, wake a model or replay a rejected block. The content script skips replies observed while paused. Continuing an idle conversation may require a new user message, which is a new task with its own budget. **Stop this task** permanently closes admission for that task; a new explicit user task can still start.
+
+These controls do not undo files, terminate background command jobs, stop website generation, or disable the user's direct tool runner/MCP connection. Use **Stop job** separately for a running command. Stop is not an emergency stop for every process on the computer. The host checks task state independently of the panel, including after reconnect.
+
+Per-response and task call limits are saved when the task is first observed. Raising configuration limits does not expand an existing task. A stricter current configuration also applies. Calls reserved before Pause keep their consumed budget; denied admissions do not consume another reservation. A cached result can be recovered while paused or stopped without executing again. A different tool payload or task identity cannot reuse that response slot. Failed, timed-out and uncertain mutations never rerun automatically.
+
+**Status / first receipts** and **Next receipts** show 50 bounded request summaries per page: tool, requested path, actual calling session, timestamps, duration, outcome, recovery/job IDs when present and the audit sequence for newly finished calls. “Running” means admission is open, not that the model is working. `observed_age_seconds` is wall-clock age since first observation, including idle time. A completed `run_command` request can mean it only queued a job; inspect the linked job receipt.
+
+**Save local task report** creates a private JSON snapshot under the application home's `reports/tasks/`. It distinguishes completed, failed, denied, cancelled, in-progress and unverified requests. Reports include at most 512 summaries and declare whether more exist; no raw argument bodies or file contents are exported. Requested paths are not a complete list of changed files: multi-file tools and external programs have their own receipts. An expired request without a terminal receipt is unverified, even if its file happens to exist. Reports do not infer whole-task completion or certify that the user's objective was achieved.
+
+The packaged host restart/write/approval checks passed; live browser acceptance of these new controls remains pending. Whole-task plans, explicit start-time budget selection, scheduling, automatic continuation and comprehensive completion reports remain open in UAB-04/06.
 
 ## Before starting
 

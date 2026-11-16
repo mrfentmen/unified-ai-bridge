@@ -347,6 +347,13 @@ pub async fn run() -> Result<()> {
                 }
                 let scope =
                     serde_json::to_string(&(&app.workspace.root, &session.provider, conversation))?;
+                let task = match app.store.ensure_task(&crate::tasks::Task::observed(&app,&session,&scope,&task_id)) {
+                    Ok(task) => task,
+                    Err(err) => {
+                        send_error(&tx,"store_error",err.to_string(),Some(request_key)).await;
+                        continue;
+                    }
+                };
                 let claim = match app.store.claim_response(ResponseRequest {
                     scope: &scope,
                     response: &response_id,
@@ -365,6 +372,10 @@ pub async fn run() -> Result<()> {
                     }
                 };
                 let rejected = matches!(&claim, RequestClaim::Rejected(_));
+                if let Err(err) = app.store.annotate_response(&scope,&response_id,call_index,&session_id) {
+                    send_error(&tx,"store_error",err.to_string(),Some(request_key)).await;
+                    continue;
+                }
                 match claim {
                     RequestClaim::Completed(json) | RequestClaim::Rejected(json) => {
                         if let Ok(result) = serde_json::from_str::<ToolResultMessage>(&json) {
@@ -438,7 +449,7 @@ pub async fn run() -> Result<()> {
                                 .map(str::to_owned);
                             let execution = async {
                                 let _permit = semaphore.acquire_owned().await;
-                                tools::dispatch(&app, agent, &session_id, &tool_for_task, arguments)
+                                crate::tasks::execute(&app, &task.id, task.revision, agent, &session_id, &tool_for_task, arguments)
                                     .await
                             };
                             let result = match tokio::time::timeout(
@@ -467,6 +478,13 @@ pub async fn run() -> Result<()> {
                             };
                             let duration_ms = started.elapsed().as_millis() as u64;
                             let json = serde_json::to_string(&result).unwrap_or_default();
+                            let receipt = app.store.append_audit(crate::store::AuditInput {
+                                agent:agent.dir().into(), session_id:session_id.clone(), action:"task.step_result".into(), path:path.clone(),
+                                decision:result.status.clone(),detail:serde_json::json!({"task_id":task.id,"response_id":response_id,"call_index":call_index,"request_key":request_key,"tool":tool_for_task,"code":result.code,"duration_ms":duration_ms}).to_string()
+                            }).and_then(|entry|app.store.link_response_audit(&scope,&response_id,call_index,entry.body.seq));
+                            if let Err(err) = receipt {
+                                HostLog::new(log_path.clone()).write("error",&format!("could not link task receipt {request_key}: {err}"));
+                            }
                             let status = if result.status == "ok" {
                                 "complete"
                             } else {
@@ -474,7 +492,7 @@ pub async fn run() -> Result<()> {
                             };
                             if let Err(err) =
                                 app.store
-                                    .finish_response(&scope, &response_id, call_index, &json)
+                                    .finish_response_timed(&scope, &response_id, call_index, &json, duration_ms)
                             {
                                 HostLog::new(log_path.clone()).write(
                                     "error",
@@ -486,13 +504,13 @@ pub async fn run() -> Result<()> {
                             HostLog::new(log_path).write(
                                 "info",
                                 &format!(
-                                    "tool {} for {} finished in {}ms ({}) session={} provider={} tab={} conversation={:?} workspace={:?} path={:?} request={} bytes={}",
+                                    "tool {} for {} finished in {}ms ({}) session={} provider={} tab={} conversation={:?} workspace={:?} path={:?} request={} bytes={} task={}",
                                     tool_for_task,
                                     agent.dir(),
                                     duration_ms,
                                     if status == "complete" { "ok" } else { "error" },
                                     session_id, session.provider, session.tab_id, session.conversation,
-                                    app.workspace.root, path, request_key, json.len()
+                                    app.workspace.root, path, request_key, json.len(), task.id
                                 ),
                             );
                             let _ = tx
@@ -533,6 +551,8 @@ pub async fn run() -> Result<()> {
                 let audit_valid = app.store.verify_audit().map(|v| v.valid).unwrap_or(false);
                 let _ = tx
                     .send(HostToExt::StatusReply {
+                        task_states: app.store.tasks(&app.workspace.id()).unwrap_or_default().into_iter().map(|t|
+                            serde_json::json!({"workspace_id":t.workspace_id,"provider":t.provider,"conversation":t.conversation,"task_id":t.task_id,"state":t.state})).collect(),
                         bridge: "connected".into(),
                         host_version: env!("CARGO_PKG_VERSION").into(),
                         workspace_root: app.workspace.root.to_string_lossy().to_string(),
@@ -767,6 +787,14 @@ pub async fn run() -> Result<()> {
                     crate::jobs::control(&app, &workspace_id, action),
                 )
                 .await;
+            }
+            ExtToHost::TaskControl {request_key,workspace_id,action} => {
+                if !is_ready(&hello) {
+                    send_error(&tx,"hello_required","send hello before task controls".into(),Some(request_key)).await;
+                    continue;
+                }
+                log.write("info",&format!("panel task control {action:?} workspace={workspace_id} request={request_key}"));
+                send_control(&tx,request_key,crate::tasks::control(&app,&workspace_id,action)).await;
             }
             ExtToHost::Preflight { request_key } => {
                 send_control(&tx, request_key, crate::tools::system::preflight(&app)).await;

@@ -108,6 +108,7 @@ pub async fn bridge_content() {
         processed: HashSet::new(),
         last_register_ms: 0.0,
         route_epoch: 0,
+        task_gate: None,
     }));
 
     install_buttons(&state);
@@ -203,6 +204,7 @@ struct ContentState {
     processed: HashSet<String>,
     last_register_ms: f64,
     route_epoch: u64,
+    task_gate: Option<(String,String)>,
 }
 
 #[derive(Clone)]
@@ -240,6 +242,7 @@ fn save_memory(state: &ContentState) {
 
 fn update_workspace(shared: &Rc<RefCell<ContentState>>, id: &str, root: &str) {
     let mut state = shared.borrow_mut();
+    state.task_gate = None;
     if state.paused {
         state.workspace_id = id.into();
         state.workspace = root.into();
@@ -881,6 +884,7 @@ fn sync_conversation(shared: &Rc<RefCell<ContentState>>) -> bool {
         return false;
     }
     state.conversation = conversation;
+    state.task_gate = None;
     state.route_epoch += 1;
     state.session_id = None;
     state.connected = false;
@@ -1263,6 +1267,16 @@ async fn poll_status(state: Rc<RefCell<ContentState>>) {
         }
         state.auto_connect = status.auto_connect;
         state.host_version = status.host_version.clone();
+        if let Some(task) = status.task_states.iter().find(|t|
+            t["workspace_id"].as_str()==Some(&state.workspace_id)
+            && t["provider"].as_str()==Some(state.provider.slug())
+            && t["conversation"].as_str()==state.conversation.as_deref()
+            && t["task_id"].as_str()==state.memory.task_id.as_deref()) {
+            if task["state"] == "running" && state.task_gate.is_some() { state.adapter_warning=None; }
+            state.task_gate = if task["state"] == "running" { None } else {
+                Some((task["task_id"].as_str().unwrap_or_default().into(), task["state"].as_str().unwrap_or("halted").into()))
+            };
+        }
         if let Some(session_id) = session_id.as_deref() {
             state.session_approval = status
                 .approvals
@@ -1388,6 +1402,16 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
         };
         task
     };
+    let task_gate = state.borrow().task_gate.clone();
+    if let Some((id, gate)) = task_gate {
+        if id == task_id {
+            let mut current = state.borrow_mut();
+            current.adapter_warning = Some(format!("Chat task {gate}. Use the extension's Chat task controls. Already started commands have separate Stop controls."));
+            current.processed.insert(format!("{}:{}",turn.conversation,turn.assistant));
+            render(&current);
+            return;
+        }
+    }
     if adapter.is_generating(&document) {
         return;
     }
@@ -1505,10 +1529,12 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
                 .last()
                 .and_then(|p| p.get("code"))
                 .and_then(Value::as_str)
-                .is_some_and(|code| code.ends_with("budget_exceeded"))
+                .is_some_and(|code| code.ends_with("budget_exceeded") || matches!(code,"task_halted"|"task_paused"|"task_stopped"))
             {
                 let mut current = state.borrow_mut();
-                current.memory.task_id = None;
+                if payloads.last().and_then(|p|p["code"].as_str()).is_some_and(|c|c.starts_with("task_")&&!c.ends_with("budget_exceeded")) {
+                    current.task_gate=Some((task_id.clone(),"halted".into()));
+                } else { current.memory.task_id = None; }
                 save_memory(&current);
                 break;
             }

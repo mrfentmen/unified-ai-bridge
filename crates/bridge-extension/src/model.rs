@@ -116,6 +116,8 @@ pub struct ApprovalView {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StatusView {
     #[serde(default)]
+    pub task_states: Vec<Value>,
+    #[serde(default)]
     pub reconnect_attempt: u32,
     #[serde(default)]
     pub active_id: String,

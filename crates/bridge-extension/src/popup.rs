@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use leptos::prelude::*;
-use serde_json::json;
+use serde_json::{json, Value};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 
@@ -235,6 +235,7 @@ fn bridge_ui(wide: bool) -> impl IntoView {
 
             <SectionTitle text="Recent local activity"/>
             <JobControls status=status error=error/>
+            <TaskControls status=status error=error/>
             <RecoveryControls status=status error=error/>
             <ActivityFeed status=status error=error/>
 
@@ -1040,6 +1041,74 @@ fn ReadinessControls(
                 match workspace_request(json!({"op":"preflight"})).await{Ok(value)=>report.set(serde_json::to_string_pretty(&value).unwrap_or_default()),Err(e)=>error.set(Some(e))}
             })>"Check host and workspace"</button>
             <pre style="white-space:pre-wrap;overflow:auto;max-height:340px">{move||report.get()}</pre>
+        </details>
+    }
+}
+
+#[component]
+fn TaskControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -> impl IntoView {
+    let tasks = RwSignal::new(Vec::<Value>::new());
+    let selected = RwSignal::new(String::new());
+    let detail = RwSignal::new(String::new());
+    let cursor = RwSignal::new(0i64);
+    let busy = RwSignal::new(false);
+    let seen_workspace = RwSignal::new(String::new());
+    Effect::new(move |_| {
+        let workspace = status.get().active_id;
+        if workspace != seen_workspace.get_untracked() {
+            seen_workspace.set(workspace);
+            tasks.set(vec![]);
+            selected.set(String::new());
+            detail.set(String::new());
+            cursor.set(0);
+        }
+    });
+    let request = move |action: Value| {
+        if busy.get_untracked() { return; }
+        busy.set(true);
+        let workspace = status.get_untracked().active_id;
+        spawn_local(async move {
+            let result = workspace_request(json!({"op":"task_control","workspace_id":workspace,"action":action})).await;
+            if status.get_untracked().active_id == workspace {
+                match result {
+                    Ok(value) => {
+                        error.set(None);
+                        if let Some(rows) = value["tasks"].as_array() {
+                            tasks.set(rows.clone());
+                            detail.set(format!("{} recent chat tasks. A running state permits calls; it does not mean the model is currently working.",rows.len()));
+                        } else {
+                            if let Some(id) = value["task"]["id"].as_str() {
+                                tasks.update(|rows| { if let Some(row)=rows.iter_mut().find(|t|t["id"].as_str()==Some(id)) { *row=value["task"].clone(); } });
+                            }
+                            cursor.set(value["next_cursor"].as_i64().unwrap_or(0));
+                            detail.set(serde_json::to_string_pretty(&value).unwrap_or_default());
+                        }
+                    }
+                    Err(e) => error.set(Some(e)),
+                }
+            }
+            busy.set(false);
+        });
+    };
+    let selected_state = move || tasks.get().into_iter().find(|t|t["id"].as_str()==Some(&selected.get()))
+        .and_then(|t|t["state"].as_str().map(str::to_owned)).unwrap_or_default();
+    view! {
+        <details style="margin:10px 0"><summary>"Chat task controls and receipts"</summary>
+            <div>"Pause/Stop block new and queued calls and close waiting approvals. Started operations may finish. Background commands use Stop job above. Resume keeps the remaining budget; it does not restart the model or retry an old call."</div>
+            <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|request(json!({"operation":"list"}))>"Refresh recent tasks (up to 100)"</button>
+            <div style="display:grid;gap:4px;max-height:220px;overflow:auto">{move||tasks.get().into_iter().map(|task|{
+                let id=task["id"].as_str().unwrap_or_default().to_owned();
+                let label=format!("{} · {} · {} · {} calls left",task["provider"].as_str().unwrap_or_default(),task["conversation"].as_str().unwrap_or_default(),task["state"].as_str().unwrap_or_default(),task["remaining_calls"]);
+                view!{<button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{selected.set(id.clone());cursor.set(0);request(json!({"operation":"detail","task_id":id,"after":0}));}>{label}</button>}
+            }).collect_view()}</div>
+            <div style="font-family:monospace;word-break:break-all">{move||format!("Selected task: {}",selected.get())}</div>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected.get().is_empty() on:click=move |_|request(json!({"operation":"detail","task_id":selected.get(),"after":0}))>"Status / first receipts"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||cursor.get()==0 on:click=move |_|request(json!({"operation":"detail","task_id":selected.get(),"after":cursor.get()}))>"Next receipts"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected_state()!="running" on:click=move |_|request(json!({"operation":"pause","task_id":selected.get()}))>"Pause local calls"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected_state()!="paused" on:click=move |_|request(json!({"operation":"resume","task_id":selected.get()}))>"Resume local calls"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected.get().is_empty()||selected_state()=="stopped" on:click=move |_|request(json!({"operation":"stop","task_id":selected.get()}))>"Stop this task"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected.get().is_empty() on:click=move |_|request(json!({"operation":"export_report","task_id":selected.get()}))>"Save local task report"</button>
+            <pre style="white-space:pre-wrap;overflow:auto;max-height:320px">{move||detail.get()}</pre>
         </details>
     }
 }

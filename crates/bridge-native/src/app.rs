@@ -431,6 +431,7 @@ impl App {
         reason: &str,
         path: Option<String>,
     ) -> Result<(), ToolFailure> {
+        crate::tasks::checkpoint(self)?;
         if !self.interactive {
             self.audit_denial(
                 agent,
@@ -466,14 +467,21 @@ impl App {
             .map_err(|err| ToolFailure::Internal(err.to_string()))?;
         let tx = self.events.clone();
         let request_for_event = request.clone();
-        let result = self
+        let approval_id = request.id.clone();
+        let ask = self
             .approvals
             .ask(request, self.config.approval_timeout_secs, move |_| {
                 let _ = tx.send(BridgeEvent::ApprovalRequired {
                     approval: request_for_event.clone(),
                 });
-            })
-            .await;
+            });
+        let result = tokio::select! {
+            result = ask => result.and_then(|_|crate::tasks::checkpoint(self)),
+            error = crate::tasks::wait_until_halted(self) => {
+                let _ = self.events.send(BridgeEvent::ApprovalResolved {approval_id, allowed:false});
+                Err(error)
+            }
+        };
         match &result {
             Ok(()) => self.audit_approval(agent, session_id, tool, path, "approved"),
             Err(_) => self.audit_approval(agent, session_id, tool, path, "denied"),

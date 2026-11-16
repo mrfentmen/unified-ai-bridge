@@ -275,6 +275,66 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_unified-ai-bridge-native"))
 }
 
+#[test]
+fn chat_task_controls_persist_across_real_host_restart_without_replaying_writes() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let root = temp.path().join("workspace");
+    let binary = binary();
+    setup_workspace(&binary, &home, &root);
+    let mut host = HostProcess::start(&binary, &home, &[]);
+    let session = host.register();
+    let args = json!({"path":"AGENTS/CHATGPT/notes/task-proof.md","content":"Real Native Messaging task receipt\n"});
+    let written = host.tool(&session,"task-write",0,"write_document",args.clone());
+    assert_eq!(written["status"],"ok","{written}");
+    let id = {
+        host.send(&json!({"type":"task_control","request_key":"task-list","workspace_id":host.workspace_id,"action":{"operation":"list"}}));
+        host.receive_until("control_result")["result"]["tasks"][0]["id"].as_str().unwrap().to_owned()
+    };
+    host.send(&json!({"type":"task_control","request_key":"task-pause","workspace_id":host.workspace_id,"action":{"operation":"pause","task_id":id}}));
+    assert_eq!(host.receive_until("control_result")["result"]["task"]["state"],"paused");
+    let denied=host.tool(&session,"paused-write",0,"write_document",json!({"path":"AGENTS/CHATGPT/notes/not-written.md","content":"no"}));
+    assert_eq!(denied["code"],"task_paused");
+    assert!(!root.join("AGENTS/CHATGPT/notes/not-written.md").exists());
+    drop(host);
+    let mut host=HostProcess::start(&binary,&home,&[]);let session=host.register();
+    host.send(&json!({"type":"task_control","request_key":"task-reopened","workspace_id":host.workspace_id,"action":{"operation":"detail","task_id":id}}));
+    let detail=host.receive_until("control_result")["result"].clone();
+    assert_eq!(detail["task"]["state"],"paused");
+    assert_eq!(detail["task"]["counts"]["completed"],1);
+    assert!(detail["steps"][0]["audit_seq"].as_i64().unwrap()>0);
+    assert_eq!(host.tool(&session,"task-write",0,"write_document",args),written);
+    host.send(&json!({"type":"task_control","request_key":"task-resume","workspace_id":host.workspace_id,"action":{"operation":"resume","task_id":id}}));
+    assert_eq!(host.receive_until("control_result")["result"]["task"]["state"],"running");
+    let read=host.tool(&session,"after-resume",0,"read_file",json!({"path":"AGENTS/CHATGPT/notes/task-proof.md"}));
+    assert_eq!(read["status"],"ok");
+    assert!(read["output"].as_str().unwrap().contains("Real Native Messaging task receipt"));
+    host.send(&json!({"type":"tool_request","session_id":session,"workspace_id":host.workspace_id,
+        "request_key":bridge_core::execution::request_key("chatgpt","reliability","pending-write",0),
+        "response_id":"pending-write","task_id":"user-task","call_index":0,"tool":"write_document",
+        "arguments":{"path":"SHARED/documentation/not-written.md","content":"stop cancels this approval"}}));
+    let approval=host.receive_until("approval_required")["approval"]["id"].as_str().unwrap().to_owned();
+    host.send(&json!({"type":"task_control","request_key":"task-stop","workspace_id":host.workspace_id,"action":{"operation":"stop","task_id":id}}));
+    let mut stopped=false;let mut halted=false;
+    while !stopped || !halted {
+        let msg=host.messages.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+        if msg["type"]=="control_result" {assert_eq!(msg["result"]["task"]["state"],"stopped");stopped=true;}
+        if msg["type"]=="tool_result" {assert_eq!(msg["result"]["code"],"task_halted");halted=true;}
+    }
+    host.send(&json!({"type":"approval_decision","approval_id":approval,"allow":true}));
+    assert_eq!(host.receive_until("approval_resolved")["allowed"],false);
+    assert!(!root.join("SHARED/documentation/not-written.md").exists());
+    host.send(&json!({"type":"task_control","request_key":"task-report","workspace_id":host.workspace_id,"action":{"operation":"export_report","task_id":id}}));
+    let receipt=host.receive_until("control_result");
+    let report:Value=serde_json::from_slice(&std::fs::read(receipt["result"]["report_path"].as_str().unwrap()).unwrap()).unwrap();
+    assert_eq!(report["task"]["state"],"stopped");
+    assert_eq!(report["task"]["counts"]["completed"],2);
+    assert_eq!(report["task"]["counts"]["cancelled"],2);
+    assert_eq!(std::fs::read_to_string(root.join("AGENTS/CHATGPT/notes/task-proof.md")).unwrap(),"Real Native Messaging task receipt\n");
+    host.send(&json!({"type":"status"}));assert_eq!(host.receive_until("status_reply")["audit_valid"],true);
+    println!("Real framed task controls: write/read, pause, restart, replay without duplicate write, resume, stop during approval, late approval denial, private report, valid audit");
+}
+
 fn setup_workspace(binary: &Path, home: &Path, project: &Path) {
     let status = Command::new(binary)
         .args([

@@ -13,6 +13,7 @@ pub mod sandbox;
 pub mod selftest;
 pub mod setup;
 pub mod store;
+pub mod tasks;
 pub mod tools;
 pub mod wire;
 pub mod workspace;

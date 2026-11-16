@@ -19,6 +19,8 @@ pub enum ToolFailure {
     Io(String),
     #[error("{0}")]
     Internal(String),
+    #[error("{0}")]
+    TaskHalted(String),
 }
 
 impl ToolFailure {
@@ -32,6 +34,7 @@ impl ToolFailure {
             ToolFailure::Unsupported(_) => "unsupported",
             ToolFailure::Io(_) => "io_error",
             ToolFailure::Internal(_) => "internal_error",
+            ToolFailure::TaskHalted(_) => "task_halted",
         }
     }
 

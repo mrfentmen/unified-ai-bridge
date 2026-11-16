@@ -10,6 +10,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const GENESIS_HASH: &str = "GENESIS";
+const TASK_OUTCOME_SQL: &str = "CASE
+    WHEN status='running' AND deadline>?3 THEN 'in_progress'
+    WHEN status='running' OR json_extract(result_json,'$.code')='request_timeout' THEN 'unverified'
+    WHEN json_extract(result_json,'$.code') IN ('task_halted','task_paused','task_stopped') THEN 'cancelled'
+    WHEN status='rejected' OR json_extract(result_json,'$.code') IN ('permission_denied','approval_denied') THEN 'denied'
+    WHEN json_extract(result_json,'$.status')='ok' THEN 'completed'
+    ELSE 'failed' END";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionRecord {
@@ -234,6 +241,9 @@ impl Store {
                 PRIMARY KEY(scope, response_id, call_index)
             );
             CREATE INDEX IF NOT EXISTS response_request_tasks ON response_requests(scope, task_id);
+            CREATE TABLE IF NOT EXISTS chat_tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
+                scope TEXT NOT NULL, task_id TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(scope,task_id));
+            CREATE INDEX IF NOT EXISTS chat_tasks_workspace ON chat_tasks(workspace_id);
             CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, definition TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS bridge_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS activity_results (activity_id INTEGER PRIMARY KEY REFERENCES activity(id), duration_ms INTEGER NOT NULL, result_json TEXT NOT NULL);
@@ -258,6 +268,25 @@ impl Store {
                 [],
             )?;
         }
+        for (name, definition) in [
+            ("started_at", "TEXT NOT NULL DEFAULT ''"),
+            ("finished_at", "TEXT NOT NULL DEFAULT ''"),
+            ("duration_ms", "INTEGER NOT NULL DEFAULT 0"),
+            ("session_id", "TEXT NOT NULL DEFAULT ''"),
+            ("audit_seq", "INTEGER"),
+        ] {
+            let exists: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('response_requests') WHERE name=?1",
+                [name],
+                |row| row.get(0),
+            )?;
+            if exists == 0 {
+                conn.execute(
+                    &format!("ALTER TABLE response_requests ADD COLUMN {name} {definition}"),
+                    [],
+                )?;
+            }
+        }
         Ok(Self {
             conn: Mutex::new(conn),
             audit_path: audit_path.to_path_buf(),
@@ -267,6 +296,165 @@ impl Store {
 
     fn now() -> String {
         Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+    }
+
+    pub fn ensure_task(&self, task: &crate::tasks::Task) -> Result<crate::tasks::Task> {
+        let conn = self.conn.lock().expect("store mutex");
+        conn.execute(
+            "INSERT OR IGNORE INTO chat_tasks VALUES (?1,?2,?3,?4,?5)",
+            params![
+                task.id,
+                task.workspace_id,
+                task.scope,
+                task.task_id,
+                serde_json::to_string(task)?
+            ],
+        )?;
+        let raw: String = conn.query_row(
+            "SELECT record FROM chat_tasks WHERE id=?1",
+            [&task.id],
+            |r| r.get(0),
+        )?;
+        Ok(serde_json::from_str(&raw)?)
+    }
+
+    pub fn task(&self, id: &str) -> Result<Option<crate::tasks::Task>> {
+        let conn = self.conn.lock().expect("store mutex");
+        let raw: Option<String> = conn
+            .query_row("SELECT record FROM chat_tasks WHERE id=?1", [id], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        raw.map(|v| serde_json::from_str(&v).map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn tasks(&self, workspace: &str) -> Result<Vec<crate::tasks::Task>> {
+        let conn = self.conn.lock().expect("store mutex");
+        let mut query = conn.prepare("SELECT record FROM chat_tasks WHERE workspace_id=?1 ORDER BY json_extract(record,'$.updated_at') DESC,id LIMIT 100")?;
+        let rows = query.query_map([workspace], |r| r.get::<_, String>(0))?;
+        rows.map(|v| Ok(serde_json::from_str(&v?)?)).collect()
+    }
+
+    pub fn set_task_state(
+        &self,
+        id: &str,
+        revision: u64,
+        state: &str,
+    ) -> Result<crate::tasks::Task> {
+        if !matches!(state, "running" | "paused" | "stopped") {
+            bail!("invalid task state");
+        }
+        let mut conn = self.conn.lock().expect("store mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let raw: String = tx.query_row("SELECT record FROM chat_tasks WHERE id=?1", [id], |r| {
+            r.get(0)
+        })?;
+        let mut task: crate::tasks::Task = serde_json::from_str(&raw)?;
+        if task.revision != revision {
+            bail!("task controls changed; refresh before retrying");
+        }
+        if task.state == "stopped" && state != "stopped" {
+            bail!("stopped tasks cannot resume; a new explicit user task is required");
+        }
+        if task.state != state {
+            task.state = state.into();
+            task.revision += 1;
+            task.updated_at = Self::now();
+            tx.execute(
+                "UPDATE chat_tasks SET record=?2 WHERE id=?1",
+                params![id, serde_json::to_string(&task)?],
+            )?;
+        }
+        tx.commit()?;
+        Ok(task)
+    }
+
+    pub fn task_step_count(&self, task: &crate::tasks::Task) -> Result<u64> {
+        let conn = self.conn.lock().expect("store mutex");
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM response_requests WHERE scope=?1 AND task_id=?2",
+            params![task.scope, task.task_id],
+            |r| r.get::<_, i64>(0),
+        )? as u64)
+    }
+
+    pub fn task_counts(&self, task: &crate::tasks::Task) -> Result<serde_json::Value> {
+        let conn = self.conn.lock().expect("store mutex");
+        let sql = format!("SELECT {},COUNT(*),SUM(status!='rejected') FROM response_requests WHERE scope=?1 AND task_id=?2 GROUP BY 1", TASK_OUTCOME_SQL);
+        let mut query = conn.prepare(&sql)?;
+        let rows = query.query_map(
+            params![task.scope, task.task_id, Utc::now().timestamp()],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            },
+        )?;
+        let mut result = serde_json::json!({"completed":0,"failed":0,"denied":0,"cancelled":0,"unverified":0,"in_progress":0,"reserved_calls":0});
+        let mut reserved = 0;
+        for row in rows {
+            let (outcome, count, calls) = row?;
+            result[&outcome] = count.into();
+            reserved += calls;
+        }
+        result["reserved_calls"] = reserved.into();
+        Ok(result)
+    }
+
+    pub fn task_steps(
+        &self,
+        task: &crate::tasks::Task,
+        after: i64,
+        limit: u32,
+    ) -> Result<Vec<serde_json::Value>> {
+        let conn = self.conn.lock().expect("store mutex");
+        // SQL extracts bounded receipt fields without reading raw file content into the report.
+        let sql = format!("SELECT json_object('cursor',rowid,'response_id',response_id,'call_index',call_index,'session_id',session_id,'audit_seq',audit_seq,
+            'tool',substr(json_extract(payload,'$[0]'),1,100),
+            'requested_path',substr(COALESCE(json_extract(payload,'$[1].destination'),json_extract(payload,'$[1].path')),1,1024),
+            'outcome',{},'started_at',started_at,'finished_at',finished_at,'duration_ms',duration_ms,
+            'code',substr(json_extract(result_json,'$.code'),1,100),
+            'summary',substr(COALESCE(json_extract(result_json,'$.error'),json_extract(result_json,'$.summary')),1,512),
+            'change_id',substr(json_extract(result_json,'$.data.change_id'),1,128),'patch_id',substr(json_extract(result_json,'$.data.patch_id'),1,128),
+            'job_id',substr(json_extract(result_json,'$.data.job_id'),1,128),'review_id',substr(json_extract(result_json,'$.data.review_id'),1,128))
+            FROM response_requests WHERE scope=?1 AND task_id=?2 AND rowid>?4 ORDER BY rowid LIMIT ?5",TASK_OUTCOME_SQL);
+        let mut query = conn.prepare(&sql)?;
+        let rows = query.query_map(
+            params![
+                task.scope,
+                task.task_id,
+                Utc::now().timestamp(),
+                after,
+                limit.min(512)
+            ],
+            |r| r.get::<_, String>(0),
+        )?;
+        rows.map(|v| Ok(serde_json::from_str(&v?)?)).collect()
+    }
+
+    pub fn annotate_response(
+        &self,
+        scope: &str,
+        response: &str,
+        index: u32,
+        session: &str,
+    ) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute("UPDATE response_requests SET session_id=?4 WHERE scope=?1 AND response_id=?2 AND call_index=?3 AND session_id=''",params![scope,response,index,session])?;
+        Ok(())
+    }
+
+    pub fn link_response_audit(
+        &self,
+        scope: &str,
+        response: &str,
+        index: u32,
+        seq: i64,
+    ) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute("UPDATE response_requests SET audit_seq=?4 WHERE scope=?1 AND response_id=?2 AND call_index=?3 AND audit_seq IS NULL",params![scope,response,index,seq])?;
+        Ok(())
     }
 
     pub fn insert_job(&self, job: &crate::jobs::Job) -> Result<()> {
@@ -373,13 +561,30 @@ impl Store {
         Ok(())
     }
 
-    pub fn recovery_settings(&self, workspace: &str) -> Result<crate::tools::large_recovery::Settings> {
-        let raw: Option<String> = self.conn.lock().expect("store mutex").query_row(
-            "SELECT value FROM bridge_state WHERE key=?1", [format!("recovery:{workspace}")], |r|r.get(0)
-        ).optional()?;
-        Ok(raw.map(|v|serde_json::from_str(&v)).transpose()?.unwrap_or_default())
+    pub fn recovery_settings(
+        &self,
+        workspace: &str,
+    ) -> Result<crate::tools::large_recovery::Settings> {
+        let raw: Option<String> = self
+            .conn
+            .lock()
+            .expect("store mutex")
+            .query_row(
+                "SELECT value FROM bridge_state WHERE key=?1",
+                [format!("recovery:{workspace}")],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(raw
+            .map(|v| serde_json::from_str(&v))
+            .transpose()?
+            .unwrap_or_default())
     }
-    pub fn save_recovery_settings(&self, workspace: &str, settings: &crate::tools::large_recovery::Settings) -> Result<()> {
+    pub fn save_recovery_settings(
+        &self,
+        workspace: &str,
+        settings: &crate::tools::large_recovery::Settings,
+    ) -> Result<()> {
         settings.validate()?;
         self.conn.lock().expect("store mutex").execute(
             "INSERT INTO bridge_state VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -390,22 +595,48 @@ impl Store {
     pub fn binary_changes(&self, workspace: &str) -> Result<Vec<crate::tools::recovery::Change>> {
         let conn = self.conn.lock().expect("store mutex");
         let mut query = conn.prepare("SELECT record FROM file_changes WHERE workspace_id=?1 AND json_type(record,'$.binary_backup')='object' AND json_extract(record,'$.state') != 'backup_removed' ORDER BY created_at DESC LIMIT 2049")?;
-        let rows = query.query_map([workspace], |r|r.get::<_,String>(0))?;
-        rows.map(|r|Ok(serde_json::from_str(&r?)?)).collect()
+        let rows = query.query_map([workspace], |r| r.get::<_, String>(0))?;
+        rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
     }
-    pub fn save_patch(&self, patch:&crate::tools::patches::Patch)->Result<()> {
-        self.conn.lock().expect("store mutex").execute("INSERT INTO patches VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET record=excluded.record",params![patch.id,patch.workspace_id,serde_json::to_string(patch)?])?;Ok(())
+    pub fn save_patch(&self, patch: &crate::tools::patches::Patch) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute("INSERT INTO patches VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET record=excluded.record",params![patch.id,patch.workspace_id,serde_json::to_string(patch)?])?;
+        Ok(())
     }
-    pub fn save_git_review(&self, review:&crate::tools::git_review::Review)->Result<()> {
-        self.conn.lock().expect("store mutex").execute("INSERT INTO git_reviews VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET record=excluded.record",params![review.id,review.workspace_id,serde_json::to_string(review)?])?;Ok(())
+    pub fn save_git_review(&self, review: &crate::tools::git_review::Review) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute("INSERT INTO git_reviews VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET record=excluded.record",params![review.id,review.workspace_id,serde_json::to_string(review)?])?;
+        Ok(())
     }
-    pub fn git_review(&self,id:&str,workspace:&str)->Result<Option<crate::tools::git_review::Review>> {
-        let raw:Option<String>=self.conn.lock().expect("store mutex").query_row("SELECT record FROM git_reviews WHERE id=?1 AND workspace_id=?2",params![id,workspace],|r|r.get(0)).optional()?;
-        raw.map(|r|serde_json::from_str(&r).map_err(Into::into)).transpose()
+    pub fn git_review(
+        &self,
+        id: &str,
+        workspace: &str,
+    ) -> Result<Option<crate::tools::git_review::Review>> {
+        let raw: Option<String> = self
+            .conn
+            .lock()
+            .expect("store mutex")
+            .query_row(
+                "SELECT record FROM git_reviews WHERE id=?1 AND workspace_id=?2",
+                params![id, workspace],
+                |r| r.get(0),
+            )
+            .optional()?;
+        raw.map(|r| serde_json::from_str(&r).map_err(Into::into))
+            .transpose()
     }
-    pub fn patch(&self,id:&str,workspace:&str)->Result<Option<crate::tools::patches::Patch>> {
-        let raw:Option<String>=self.conn.lock().expect("store mutex").query_row("SELECT record FROM patches WHERE id=?1 AND workspace_id=?2",params![id,workspace],|r|r.get(0)).optional()?;
-        raw.map(|r|serde_json::from_str(&r).map_err(Into::into)).transpose()
+    pub fn patch(&self, id: &str, workspace: &str) -> Result<Option<crate::tools::patches::Patch>> {
+        let raw: Option<String> = self
+            .conn
+            .lock()
+            .expect("store mutex")
+            .query_row(
+                "SELECT record FROM patches WHERE id=?1 AND workspace_id=?2",
+                params![id, workspace],
+                |r| r.get(0),
+            )
+            .optional()?;
+        raw.map(|r| serde_json::from_str(&r).map_err(Into::into))
+            .transpose()
     }
 
     pub fn save_artifact(&self, artifact: &crate::tools::artifacts::Artifact) -> Result<()> {
@@ -821,16 +1052,24 @@ impl Store {
         let payload = serde_json::to_string(&(tool, arguments))?;
         let mut conn = self.conn.lock().expect("store mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let existing: Option<(String, String, Option<String>, i64)> = tx
+        let existing: Option<(String, String, Option<String>, i64, String)> = tx
             .query_row(
-                "SELECT payload, status, result_json, deadline FROM response_requests
+                "SELECT payload, status, result_json, deadline, task_id FROM response_requests
              WHERE scope=?1 AND response_id=?2 AND call_index=?3",
                 params![scope, response, index],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .optional()?;
-        if let Some((previous, status, result, deadline)) = existing {
-            if previous != payload {
+        if let Some((previous, status, result, deadline, original_task)) = existing {
+            if previous != payload || original_task != task {
                 return Ok(RequestClaim::Rejected(serde_json::to_string(&crate::wire::ToolResultMessage::error(
                     tool, "request_conflict", "This response slot already contains a different tool call; it will not execute again.".into(),
                 ))?));
@@ -845,20 +1084,39 @@ impl Store {
                 tool, "request_timeout", "The original execution expired or its host stopped. Its outcome may be uncertain; it will not be executed again.".into(),
             ))?;
             tx.execute(
-                "UPDATE response_requests SET status='error', result_json=?4
+                "UPDATE response_requests SET status='error', result_json=?4,finished_at=?5
                 WHERE scope=?1 AND response_id=?2 AND call_index=?3",
-                params![scope, response, index, result],
+                params![scope, response, index, result, Self::now()],
             )?;
             tx.commit()?;
             return Ok(RequestClaim::Completed(result));
         }
+        let task_record: Option<String> = tx
+            .query_row(
+                "SELECT record FROM chat_tasks WHERE scope=?1 AND task_id=?2",
+                params![scope, task],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let task_record = task_record
+            .map(|r| serde_json::from_str::<crate::tasks::Task>(&r))
+            .transpose()?;
+        let response_limit = task_record
+            .as_ref()
+            .map_or(response_limit, |t| t.response_limit.min(response_limit));
+        let task_limit = task_record
+            .as_ref()
+            .map_or(task_limit, |t| t.call_limit.min(task_limit));
         let response_count: u32 = tx.query_row(
             "SELECT COUNT(*) FROM response_requests WHERE scope=?1 AND response_id=?2 AND status!='rejected'",
             params![scope, response], |row| row.get(0))?;
         let task_count: u32 = tx.query_row(
             "SELECT COUNT(*) FROM response_requests WHERE scope=?1 AND task_id=?2 AND status!='rejected'",
             params![scope, task], |row| row.get(0))?;
-        let rejection = if index >= response_limit || response_count >= response_limit {
+        let rejection = if let Some(t) = task_record.as_ref().filter(|t| t.state != "running") {
+            Some((if t.state == "stopped" { "task_stopped" } else { "task_paused" },
+                format!("Chat task is {}. This response slot will not run. Only the user can resume a paused task; stopped tasks require a new explicit task.",t.state)))
+        } else if index >= response_limit || response_count >= response_limit {
             Some(("response_budget_exceeded", format!("This assistant response reached its {response_limit}-call limit. Stop and ask the user before continuing.")))
         } else if task_count >= task_limit {
             Some(("task_budget_exceeded", format!("This user task reached its {task_limit}-call limit. Wait for a new explicit user task.")))
@@ -870,10 +1128,17 @@ impl Store {
                 serde_json::to_string(&crate::wire::ToolResultMessage::error(tool, code, reason))
             })
             .transpose()?;
+        if let Some(mut record) = task_record {
+            record.updated_at = Self::now();
+            tx.execute(
+                "UPDATE chat_tasks SET record=?2 WHERE id=?1",
+                params![record.id, serde_json::to_string(&record)?],
+            )?;
+        }
         tx.execute(
             "INSERT INTO response_requests
-            (scope,response_id,call_index,task_id,payload,status,result_json,deadline)
-            VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            (scope,response_id,call_index,task_id,payload,status,result_json,deadline,started_at)
+            VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
             params![
                 scope,
                 response,
@@ -886,7 +1151,8 @@ impl Store {
                     "running"
                 },
                 result,
-                Utc::now().timestamp() + timeout_secs as i64
+                Utc::now().timestamp() + timeout_secs as i64,
+                Self::now()
             ],
         )?;
         tx.commit()?;
@@ -903,11 +1169,22 @@ impl Store {
         index: u32,
         result_json: &str,
     ) -> Result<bool> {
+        self.finish_response_timed(scope, response, index, result_json, 0)
+    }
+
+    pub fn finish_response_timed(
+        &self,
+        scope: &str,
+        response: &str,
+        index: u32,
+        result_json: &str,
+        duration_ms: u64,
+    ) -> Result<bool> {
         let conn = self.conn.lock().expect("store mutex");
         Ok(conn.execute(
-            "UPDATE response_requests SET status='complete', result_json=?4
+            "UPDATE response_requests SET status='complete', result_json=?4,finished_at=?5,duration_ms=?6
             WHERE scope=?1 AND response_id=?2 AND call_index=?3 AND status='running'",
-            params![scope, response, index, result_json],
+            params![scope, response, index, result_json, Self::now(), i64::try_from(duration_ms)?],
         )? == 1)
     }
 

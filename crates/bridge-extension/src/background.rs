@@ -102,6 +102,7 @@ impl BgState {
             "extension_build": EXTENSION_VERSION,
             "active_id": self.details.get("active_id").cloned().unwrap_or_else(||json!("")),
             "workspaces": self.details.get("workspaces").cloned().unwrap_or_else(|| json!([])),
+            "task_states": self.details.get("task_states").cloned().unwrap_or_else(|| json!([])),
             "capabilities": self.details.get("capabilities").cloned().unwrap_or_default(),
             "in_flight": self.pending_tools.len().max(self.details["in_flight"].as_u64().unwrap_or(0) as usize),
             "database_path": self.details.get("database_path").cloned().unwrap_or_else(||json!("")),
@@ -179,6 +180,7 @@ enum BgRequest {
         workspace_id: String,
         action: Value,
     },
+    TaskControl { workspace_id: String, action: Value },
     Preflight,
     CreateWriteGrant {
         workspace_id: String,
@@ -683,6 +685,7 @@ fn handle_message(
         | BgRequest::CommandList
         | BgRequest::RecoveryControl { .. }
         | BgRequest::JobControl { .. }
+        | BgRequest::TaskControl { .. }
         | BgRequest::Preflight
         | BgRequest::CreateWriteGrant { .. }
         | BgRequest::RevokeWriteGrant { .. }
@@ -747,6 +750,7 @@ fn handle_message(
                     workspace_id,
                     action,
                 } => json!({"type":"job_control","workspace_id":workspace_id,"action":action}),
+                BgRequest::TaskControl {workspace_id,action} => json!({"type":"task_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::Preflight => json!({"type":"preflight"}),
                 BgRequest::CreateWriteGrant {
                     workspace_id,
@@ -1172,6 +1176,11 @@ fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
             {
+                "approval_resolved" => {
+                    if let Some(id) = event["approval_id"].as_str() {
+                        state.borrow_mut().approvals.retain(|a|a.id!=id);
+                    }
+                }
                 "activity" => {
                     if let Some(activity) = event
                         .get("activity")

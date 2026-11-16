@@ -53,6 +53,11 @@ pub enum ExtToHost {
         workspace_id: String,
         action: crate::jobs::Control,
     },
+    TaskControl {
+        request_key: String,
+        workspace_id: String,
+        action: crate::tasks::Control,
+    },
     Preflight {
         request_key: String,
     },
@@ -195,6 +200,7 @@ pub enum HostToExt {
         allowed: bool,
     },
     StatusReply {
+        task_states: Vec<Value>,
         bridge: String,
         host_version: String,
         workspace_root: String,
@@ -249,6 +255,7 @@ pub enum HostToExt {
 pub enum BridgeEvent {
     Activity { activity: ActivityRecord },
     ApprovalRequired { approval: ApprovalRequest },
+    ApprovalResolved { approval_id: String, allowed: bool },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
