@@ -23,15 +23,17 @@ pub enum Category {
     Collaboration,
     Development,
     Desktop,
+    Network,
 }
 
 impl Category {
-    pub const ALL: [Category; 5] = [
+    pub const ALL: [Category; 6] = [
         Category::Filesystem,
         Category::Research,
         Category::Collaboration,
         Category::Development,
         Category::Desktop,
+        Category::Network,
     ];
 
     pub fn label(self) -> &'static str {
@@ -41,6 +43,7 @@ impl Category {
             Category::Collaboration => "COLLABORATION",
             Category::Development => "DEVELOPMENT",
             Category::Desktop => "DESKTOP",
+            Category::Network => "NETWORK",
         }
     }
 }
@@ -48,6 +51,8 @@ impl Category {
 const PATH: &str = r#"{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative path"}},"required":["path"],"additionalProperties":false}"#;
 
 pub const TOOLS: &[ToolSpec] = &[
+    ToolSpec{name:"fetch_url_text",category:Category::Network,description:"After explicit approval, GET bounded anonymous public UTF-8 text/HTML from a user-granted origin. Network disabled by default. No private/local IPs, cookies, auth, query strings, URL credentials or custom ports. Static HTML tokens only; no CSS/JavaScript/rendering. Caps: 512 KiB body, 24 KiB text, 20 seconds, 3 checked redirects.",arguments:"url (public HTTP/S), max_bytes? (256–24000 text)",schema:r#"{"type":"object","properties":{"url":{"type":"string","maxLength":2048},"max_bytes":{"type":"integer","minimum":256,"maximum":24000}},"required":["url"],"additionalProperties":false}"#,writes:false},
+    ToolSpec{name:"download_file",category:Category::Network,description:"Approve an anonymous public GET from an explicitly granted origin into a NEW workspace file, at most 8 MiB/20 seconds/3 checked redirects. Network off by default; no cookies/auth/private addresses/query strings/custom ports. Never executes content or overwrites files. Authenticated chat files use the browser artifact importer instead.",arguments:"url (public HTTP/S), destination (new file)",schema:r#"{"type":"object","properties":{"url":{"type":"string","maxLength":2048},"destination":{"type":"string"}},"required":["url","destination"],"additionalProperties":false}"#,writes:true},
     ToolSpec{name:"inspect_workbook",category:Category::Filesystem,description:"Inspect a bounded non-macro XLSX package: sheet names, visibility, stored cell/formula counts and edit limitations. No formula execution or external links. XLS/XLSB/XLSM/ODS unavailable.",arguments:"path (.xlsx)",schema:PATH,writes:false},
     ToolSpec{name:"read_sheet_range",category:Category::Filesystem,description:"Read up to 400 XLSX cells using an exact sheet name and uppercase A1 range. Returns stored typed values, physical cell addresses and formula/cache metadata. No recalculation; caches may be stale or absent. Shared-derived formulas are not expanded. Pass the inspected hash for consistent reads.",arguments:"path, sheet, range (A1 or A1:D20), expected_sha256?",schema:r#"{"type":"object","properties":{"path":{"type":"string"},"sheet":{"type":"string"},"range":{"type":"string"},"expected_sha256":{"type":"string"}},"required":["path","sheet","range"],"additionalProperties":false}"#,writes:false},
     ToolSpec{name:"write_sheet_range",category:Category::Filesystem,description:"Create a new explicitly approved XLSX by changing 1–100 existing plain cells. Preserves original, selected styles and all untouched package payloads. Requires source hash, new destination and a rectangular literal matrix. Rejects formulas, merges, tables, drawings, protection and other unsupported editing features; no overwrites.",arguments:"path, destination (new .xlsx), expected_sha256, sheet, range, values (rows of string/number/boolean/null)",schema:r#"{"type":"object","properties":{"path":{"type":"string"},"destination":{"type":"string"},"expected_sha256":{"type":"string"},"sheet":{"type":"string"},"range":{"type":"string"},"values":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"array","minItems":1,"maxItems":100,"items":{"type":["string","number","boolean","null"]}}}},"required":["path","destination","expected_sha256","sheet","range","values"],"additionalProperties":false}"#,writes:true},

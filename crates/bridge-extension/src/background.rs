@@ -181,6 +181,7 @@ enum BgRequest {
         action: Value,
     },
     TaskControl { workspace_id: String, action: Value },
+    NetworkControl { workspace_id: String, action: Value },
     Preflight,
     CreateWriteGrant {
         workspace_id: String,
@@ -686,6 +687,7 @@ fn handle_message(
         | BgRequest::RecoveryControl { .. }
         | BgRequest::JobControl { .. }
         | BgRequest::TaskControl { .. }
+        | BgRequest::NetworkControl { .. }
         | BgRequest::Preflight
         | BgRequest::CreateWriteGrant { .. }
         | BgRequest::RevokeWriteGrant { .. }
@@ -751,6 +753,7 @@ fn handle_message(
                     action,
                 } => json!({"type":"job_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::TaskControl {workspace_id,action} => json!({"type":"task_control","workspace_id":workspace_id,"action":action}),
+                BgRequest::NetworkControl {workspace_id,action} => json!({"type":"network_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::Preflight => json!({"type":"preflight"}),
                 BgRequest::CreateWriteGrant {
                     workspace_id,

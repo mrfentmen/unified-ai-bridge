@@ -150,6 +150,7 @@ fn bridge_ui(wide: bool) -> impl IntoView {
             <ArtifactControls status=status error=error/>
             <ToolWorkbench status=status error=error/>
             <IntegrationControls status=status error=error/>
+            <NetworkControls status=status error=error/>
 
             <SectionTitle text="Providers"/>
             <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-bottom:11px">
@@ -299,6 +300,35 @@ fn ActivityFeed(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -
             </div>
             <Show when=move||!detail.get().is_empty()><pre style="white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto">{move||detail.get()}</pre></Show>
         </div>
+    }
+}
+
+#[component]
+fn NetworkControls(status: RwSignal<StatusView>,error: RwSignal<Option<String>>) -> impl IntoView {
+    let origins=RwSignal::new(String::new());let notice=RwSignal::new(String::from("Network policy not loaded. Default is off."));
+    let busy=RwSignal::new(false);let seen=RwSignal::new(String::new());
+    Effect::new(move||{let id=status.get().active_id;if id!=seen.get_untracked(){seen.set(id);origins.set(String::new());notice.set("Network policy not loaded. Default is off.".into());}});
+    let request=move|action:Value|{
+        if busy.get_untracked(){return;}busy.set(true);let workspace=status.get_untracked().active_id;
+        spawn_local(async move{
+            let response=workspace_request(json!({"op":"network_control","workspace_id":workspace,"action":action})).await;
+            if status.get_untracked().active_id==workspace {match response{
+                Ok(value)=>{
+                    origins.set(value["policy"]["origins"].as_array().map(|rows|rows.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n")).unwrap_or_default());
+                    notice.set(format!("Public network tools: {}. Every GET still requires approval.",if value["policy"]["enabled"]==true{"ON"}else{"OFF"}));error.set(None);
+                },Err(e)=>error.set(Some(e))
+            }}busy.set(false);
+        });
+    };
+    view!{
+        <details style="margin:10px 0"><summary>"Network access · public origins"</summary>
+            <div>"Off by default. Grant origins such as https://example.com, one per line. Anonymous GET only; no cookies, login, query strings or private/local addresses. Downloads need a new workspace path. Disabling cancels pending transfers, but cannot retract a request already sent."</div>
+            <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|request(json!({"operation":"status"}))>"Load network policy"</button>
+            <textarea style=CONTROL_STYLE rows="3" aria-label="Granted public HTTP origins, one per line" prop:value=move||origins.get() on:input=move|e|origins.set(event_target_value(&e))/>
+            <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|request(json!({"operation":"save","enabled":true,"origins":origins.get().lines().map(str::trim).filter(|s|!s.is_empty()).collect::<Vec<_>>()}))>"Save origins and enable"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|request(json!({"operation":"save","enabled":false,"origins":[]}))>"Disable and revoke network access"</button>
+            <div>{move||notice.get()}</div>
+        </details>
     }
 }
 

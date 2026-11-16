@@ -799,6 +799,12 @@ pub async fn run() -> Result<()> {
             ExtToHost::Preflight { request_key } => {
                 send_control(&tx, request_key, crate::tools::system::preflight(&app)).await;
             }
+            ExtToHost::NetworkControl{request_key,workspace_id,action}=>{
+                match crate::tools::network::control(&app,&workspace_id,action){
+                    Ok((next,value))=>{app=next;send_control(&tx,request_key,Ok(value)).await;},
+                    Err(err)=>send_error(&tx,"network_policy_error",err.to_string(),Some(request_key)).await,
+                }
+            }
             ExtToHost::CreateWriteGrant {
                 request_key,
                 workspace_id,

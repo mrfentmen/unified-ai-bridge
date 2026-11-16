@@ -34,6 +34,8 @@ pub struct Config {
     /// User-configured native MCP executables. No package installers or interpreters.
     pub workspace_integrations:
         std::collections::BTreeMap<String, Vec<crate::integrations::ServerConfig>>,
+    /// User-granted public origins. Disabled unless explicitly configured.
+    pub workspace_network: std::collections::BTreeMap<String, crate::tools::network::Policy>,
     pub private_file_patterns: Vec<String>,
 }
 
@@ -53,6 +55,7 @@ impl Default for Config {
             approved_scripts: Vec::new(),
             workspace_commands: Default::default(),
             workspace_integrations: Default::default(),
+            workspace_network: Default::default(),
             private_file_patterns: [
                 ".env",
                 ".env.*",
@@ -269,6 +272,10 @@ impl HomePaths {
 }
 
 pub fn validate_config(config: &Config) -> Result<()> {
+    for (workspace, policy) in &config.workspace_network {
+        if workspace.len()!=24||!workspace.bytes().all(|b|b.is_ascii_hexdigit()){bail!("invalid network workspace ID");}
+        policy.validate()?;
+    }
     for (workspace, servers) in &config.workspace_integrations {
         if workspace.len() != 24 || !workspace.bytes().all(|b| b.is_ascii_hexdigit()) {
             bail!("invalid integration workspace ID");

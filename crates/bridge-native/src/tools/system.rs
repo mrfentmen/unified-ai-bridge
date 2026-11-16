@@ -69,6 +69,7 @@ pub async fn workspace_info(
     Ok(ToolOutcome::read("Current workspace capabilities", "Use only advertised tools and user-granted command IDs.",Some(".".into())).with_data(json!({
         "root":policy.root,"profile":policy.profile,"read_only":policy.read_only,"permission_mode":policy.permission_mode,
         "tools":ctx.app.workspace.profile.tools().map(|t|t.name).collect::<Vec<_>>(),"commands":commands,
+        "network":super::network::policy(ctx.app),
         "limits":{"text_bytes":super::MAX_READ_BYTES,"artifact_bytes":super::artifacts::MAX_BYTES,"approval_seconds":ctx.app.config.approval_timeout_secs,"tool_seconds":ctx.app.config.tool_timeout_secs,"calls_per_response":ctx.app.config.max_calls_per_response,"calls_per_task":ctx.app.config.max_calls_per_task}})))
 }
 
@@ -83,7 +84,7 @@ pub fn preflight(app: &crate::app::App) -> anyhow::Result<Value> {
         "command_id":g.command_id,"valid":g.validate().is_ok(),"program_exists":g.program.is_file(),
         "cwd_exists":app.workspace.root.join(&g.cwd).is_dir(),"timeout_secs":g.timeout_secs,"always_allow":g.always_allow})).collect::<Vec<_>>();
     Ok(
-        json!({"system":information(app),"workspace":policy,"commands":commands,
+        json!({"system":information(app),"workspace":policy,"commands":commands,"network":super::network::policy(app),
         "checks":{"workspace_exists":app.workspace.root.is_dir(),"workspace_unlocked":!policy.read_only,
             "workspace_readable":std::fs::read_dir(&app.workspace.root).is_ok(),"audit_valid":app.store.verify_audit()?.valid},
         "limits":{"tool_seconds":app.config.tool_timeout_secs,"calls_per_response":app.config.max_calls_per_response,"calls_per_task":app.config.max_calls_per_task},

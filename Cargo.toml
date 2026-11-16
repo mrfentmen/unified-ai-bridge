@@ -9,7 +9,7 @@ members = [
 default-members = ["crates/bridge-core", "crates/bridge-native", "crates/bridge-tooling"]
 
 [workspace.package]
-version = "0.5.17"
+version = "0.5.18"
 edition = "2021"
 license = "MIT"
 authors = ["Unified AI Bridge"]

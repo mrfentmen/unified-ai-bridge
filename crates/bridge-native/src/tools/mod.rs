@@ -14,6 +14,7 @@ pub mod tables;
 pub mod documents;
 pub mod pdf;
 pub mod workbooks;
+pub mod network;
 pub mod file_extra;
 pub mod filesystem;
 pub mod recovery;
@@ -545,6 +546,8 @@ pub async fn dispatch(
         "query_table" => tables::query(&context, arguments).await,
         "document_info" => documents::info(&context, arguments).await,
         "integration_status" => crate::integrations::status(&context,arguments).await,
+        "fetch_url_text" => network::fetch(&context,arguments).await,
+        "download_file" => network::download(&context,arguments).await,
         "extract_document_text" => documents::extract(&context, arguments).await,
         "git_diff" => development::git_diff(&context, arguments).await,
         "inspect_repository" => development::inspect_repository(&context, arguments).await,

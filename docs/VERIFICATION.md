@@ -2,6 +2,28 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## Public network candidate 0.5.18 — November 16, 2026
+
+The source and isolated package are 0.5.18. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 202 passed, 0 failed, one separately verified long job omitted from routine runs |
+| Five network unit checks | Private/reserved/encoded addresses and mixed DNS answers rejected; redirects checked; actual local TCP bytes bounded; compression/oversize refused; no cookies/referrer/auth; pinned address used without resolving its hostname again; streaming HTML decoding/truncation/deep markup |
+| Three policy checks | Default-off and origin scope, strict arguments, denial/revocation during approval with no network request, research/private/traversal/overwrite protections, workspace separation and fresh grant revisions |
+| Isolated package | WASM/native/tooling release builds exited 0; source/package/manifest/native versions matched 0.5.18 |
+| Public HTML | Approved GET of example.com returned its actual Example Domain text. Body SHA-256 was `25ddf2c883e0d1958ea971d279a7e4f0fd446724ee3db7db19dadabd4a62e484` |
+| Public download | Approved GET of W3C dummy.pdf saved a new PDF. Its SHA-256 exactly matched the independently downloaded public sample used for 0.5.15 |
+| Refusals | Disabled access, denied fetch/download, private loopback, query string, ungranted origin, outside-root destination and repeat destination all refused. Denied download created no file; disable survived restart |
+| Audit/privacy | Doctor verified 41 matching audit entries and SQLite integrity. Raw PDF URL path and the refused query value did not appear in audit or host log |
+| Installed self-test | 41 passed, 0 failed |
+| Previous CI | Task candidate 0.5.17 run 43957615402 passed Linux and Intel tests; packaging was still running when this record was written |
+| Browser | Network controls compiled. Live approval/control interaction and provider delivery remain unverified |
+
+Saved file: `/private/tmp/uab-0518-build-5i5am12_/scratch-general/output/public-dummy.pdf`, SHA-256 `3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4`. Public source: [W3C dummy.pdf](https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf). Installed native SHA-256: `bf08449e04fd00005a7003e2b830f8cbe761f7eea6bf2f20de9965dca493bfc5`. Logs, framed messages and PDF remain local under ignored `docs/evidence/0.5.18/`. Local TCP fixtures exercise transport internals and are explicitly separate from production public-address checks; they are not provider integrations.
+
+Only standard-port public HTTP(S), selected origins and anonymous GETs are supported. No query strings, cookies, credentials, compressed bodies, private-network exceptions or implicit retries. Text is static UTF-8 source extraction, not browser-rendered visibility. Network grants remain off in the normal installation. [Complete limits](NETWORK.md).
+
 ## Durable chat-call controls candidate 0.5.17 — November 16, 2026
 
 The source and isolated package are 0.5.17. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.

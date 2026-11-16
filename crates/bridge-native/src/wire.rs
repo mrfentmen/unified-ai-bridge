@@ -61,6 +61,7 @@ pub enum ExtToHost {
     Preflight {
         request_key: String,
     },
+    NetworkControl {request_key:String,workspace_id:String,action:crate::tools::network::Control},
     CreateWriteGrant {
         request_key: String,
         workspace_id: String,
