@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.20 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.21 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -27,9 +27,10 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **Review and commit local changes (0.5.11 candidate).** Inspect Git status, diffs and history. Preview selected working files and approve a commit on a new branch while preserving your current branch, staging area and unrelated edits. Native checks passed; live UI acceptance remains pending. [Git behavior and limits](docs/GIT.md).
 - **Read and query tables (0.5.12 candidate).** Page through CSV/TSV files, select columns, filter records and calculate bounded numeric summaries. Values stay data; formulas are never executed. XLSX uses the separate workbook tools below; browser acceptance remains pending. [Table support](docs/TABLES.md).
 - **Read and edit simple spreadsheets (0.5.16 candidate).** Inspect XLSX sheets, read cell ranges and approve a copy with changed literal cells. Originals, styles and untouched content are preserved. Formula recalculation and complex workbook edits are refused. [Workbook limits](docs/WORKBOOKS.md).
-- **Read documents and preview PDF pages (0.5.15 candidate).** Extract DOCX body text or PDF embedded text with page references on macOS. Save approved PDF page previews as new PNG files. Encrypted PDFs, OCR, Word rendering and chat image delivery remain unavailable. [Document subsets](docs/DOCUMENTS.md).
+- **Read documents and preview PDF pages (0.5.15 candidate).** Extract DOCX body text or PDF embedded text with page references on macOS. Save approved PDF page previews as new PNG files. Encrypted PDFs, Word rendering and chat image delivery remain unavailable; local PNG OCR is a separate tool below. [Document subsets](docs/DOCUMENTS.md).
 - **Create a PDF report (0.5.19 candidate).** Supply a title, headings, paragraphs and bullets, then approve a new PDF with embedded fonts and numbered pages. Native creation, read-back and render checks are separate from live browser acceptance. DOCX, slides and richer layout remain pending. [Report format and limits](docs/DOCUMENT-CREATION.md).
 - **Inspect and trim PCM WAV audio (0.5.20 candidate).** Read format/duration and approve a new file containing an exact frame range. Original samples are preserved; unsupported metadata and formats are refused. Playback, transcription, video and chat audio delivery remain pending. [Audio subset](docs/MEDIA.md).
+- **Read text in a PNG (0.5.21 candidate).** Run local fast English OCR on macOS, including saved PDF page previews. Results include text boxes and confidence but can contain recognition mistakes. No image is sent to a website. [OCR boundaries](docs/OCR.md).
 - **Use your own project commands.** Grant a specific executable, arguments, working directory, timeout, and output limit. The chat selects an allowed command; it cannot invent a shell command.
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.

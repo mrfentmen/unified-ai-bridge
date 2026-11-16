@@ -251,7 +251,7 @@ checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 
 [[package]]
 name = "bridge-core"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "hex",
  "serde",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-extension"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "bridge-core",
  "console_error_panic_hook",
@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-native"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -301,6 +301,7 @@ dependencies = [
  "objc2-core-graphics",
  "objc2-foundation",
  "objc2-pdf-kit",
+ "objc2-vision",
  "pdf-writer",
  "png",
  "proc-macro2",
@@ -327,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-tooling"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2062,6 +2063,18 @@ checksum = "c14ed801ae810c6ba487cedd7616bb48f9a8e37940042f57e862538e2c7db117"
 dependencies = [
  "bitflags",
  "objc2",
+ "objc2-core-graphics",
+ "objc2-foundation",
+]
+
+[[package]]
+name = "objc2-vision"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfc194758a2d5d7540b1ad283bfb9ca318ec608991892326e95b428230b2689b"
+dependencies = [
+ "objc2",
+ "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-foundation",
 ]

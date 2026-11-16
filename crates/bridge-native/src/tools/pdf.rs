@@ -108,7 +108,7 @@ async fn run(ctx: &ToolContext<'_>, bytes: &[u8], request: Request) -> Result<Va
     documents::run_worker(ctx, "pdf-worker", &input, MAX_OUTPUT, 10).await
 }
 fn metadata(count: &Value, hash: &str) -> Value {
-    json!({"format":"pdf","sha256":hash,"page_count":count,"backend":"macOS PDFKit/CoreGraphics","encrypted":false,"ocr":"unavailable","page_rendering":"approved PNG page-content previews","text_scope":"Embedded text in physical page order; reading order and hidden-text visibility may differ from the visible page. No OCR or semantic layout. An empty text layer may mean scans, outlines, blank pages or unsupported encoding. Links, actions, JavaScript, attachments and external references are never opened. Rendered previews omit annotations and interactive form appearances."})
+    json!({"format":"pdf","sha256":hash,"page_count":count,"backend":"macOS PDFKit/CoreGraphics","encrypted":false,"ocr":"separate optional ocr_image tool for PNG on macOS","page_rendering":"approved PNG page-content previews","text_scope":"Embedded text in physical page order; reading order and hidden-text visibility may differ from the visible page. No OCR or semantic layout. An empty text layer may mean scans, outlines, blank pages or unsupported encoding. Links, actions, JavaScript, attachments and external references are never opened. Rendered previews omit annotations and interactive form appearances."})
 }
 pub(super) async fn info(ctx: &ToolContext<'_>, path: &str) -> Result<ToolOutcome, ToolFailure> {
     let (bytes, hash) = source(ctx, "document_info", path, None)?;
@@ -322,7 +322,7 @@ pub async fn render(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, T
                 "PDF pages published but audit finalization failed; inspect destination: {e}"
             ))
         })?;
-    Ok(ToolOutcome::write("PDF previews saved","Page-content previews omit annotations/forms. Original preserved; no image has been attached to a chat. OCR is unavailable.",Some(destination.display())).with_data(receipt))
+    Ok(ToolOutcome::write("PDF previews saved","Page-content previews omit annotations/forms. Original preserved; no image has been attached to a chat. OCR is a separate optional ocr_image call on a saved PNG.",Some(destination.display())).with_data(receipt))
 }
 pub fn worker() -> anyhow::Result<()> {
     for (resource, limit) in [(libc::RLIMIT_CORE, 0), (libc::RLIMIT_CPU, 6)] {

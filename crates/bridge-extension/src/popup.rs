@@ -567,6 +567,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let document_pages=RwSignal::new("{\"first_page\":1,\"last_page\":1,\"max_dimension\":1200}".to_string());
     let report_destination=RwSignal::new(String::new());
     let report_title=RwSignal::new(String::new());
+    let ocr_path=RwSignal::new(String::new());
     let media_path=RwSignal::new(String::new());
     let media_hash=RwSignal::new(String::new());
     let media_destination=RwSignal::new(String::new());
@@ -773,7 +774,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <button style=CONTROL_STYLE disabled=move||busy.get()||workbook_hash.get().is_empty()||workbook_destination.get().is_empty()||workbook_sheet.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&workbook_values.get()){Ok(values) if values.is_array()=>execute("write_sheet_range".into(),json!({"path":workbook_path.get(),"destination":workbook_destination.get(),"sheet":workbook_sheet.get(),"range":workbook_range.get(),"expected_sha256":workbook_hash.get(),"values":values})),_=>error.set(Some("Enter rows of literal values, for example [[1,\"text\"],[2,null]].".into()))}}>"Request edited workbook copy"</button>
                 </details>
                 <details><summary>"Read documents and preview PDF pages"</summary>
-                    <p>"DOCX body text with reported omissions. On macOS: PDF embedded text with physical page references and approved PNG previews. No OCR, encrypted PDFs or DOCX rendering. Previews omit annotations/forms and are saved locally; they are not sent to a chat."</p>
+                    <p>"DOCX body text with reported omissions. On macOS: PDF embedded text with physical page references and approved PNG previews. No encrypted PDFs or DOCX rendering. OCR is a separate optional call on a saved PNG. Previews omit annotations/forms and are saved locally; they are not sent to a chat."</p>
                     <input aria-label="DOCX or PDF file path" style=CONTROL_STYLE placeholder="files/document.pdf" prop:value=move||document_path.get() on:input=move|ev|{document_path.set(event_target_value(&ev));document_next.set(None);document_hash.set(String::new());}/>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||document_path.get().is_empty() on:click=move |_|execute("document_info".into(),json!({"path":document_path.get()}))>"Inspect document"</button>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||document_path.get().is_empty() on:click=move |_|{document_next.set(None);execute("extract_document_text".into(),json!({"path":document_path.get()}));}>"Read body text"</button>
@@ -789,6 +790,11 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <p>"Content blocks: heading, paragraph or bullet with text; page_break starts a new page."</p>
                     <textarea aria-label="PDF report content blocks JSON" style=CONTROL_STYLE rows="5" prop:value=move||report_blocks.get() on:input=move|ev|report_blocks.set(event_target_value(&ev))></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||report_destination.get().is_empty()||report_title.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&report_blocks.get()){Ok(blocks) if blocks.is_array()=>execute("create_document".into(),json!({"destination":report_destination.get(),"format":"pdf","template":"report","title":report_title.get(),"blocks":blocks})),_=>error.set(Some("Enter an array of report content blocks.".into()))}}>"Request PDF creation"</button>
+                </details>
+                <details><summary>"Read text from a PNG"</summary>
+                    <p>"Local fast English OCR on macOS. Results may contain mistakes; confidence is not proof. Static plain 8-bit PNG only, up to 8 MiB and 4 million pixels. No image is attached to a chat."</p>
+                    <input aria-label="OCR PNG path" style=CONTROL_STYLE placeholder="output/pdf-preview/page-0001.png" prop:value=move||ocr_path.get() on:input=move|ev|ocr_path.set(event_target_value(&ev))/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||ocr_path.get().is_empty() on:click=move |_|execute("ocr_image".into(),json!({"path":ocr_path.get(),"max_bytes":12000}))>"Recognize text locally"</button>
                 </details>
                 <details><summary>"Inspect and trim WAV audio"</summary>
                     <p>"PCM WAV only, mono/stereo, at most 32 MiB. Inspect sample rate and frame count first. A trim copies all channels exactly into a new file; it does not play, transcribe or upload audio. Metadata-bearing files are refused for trimming."</p>

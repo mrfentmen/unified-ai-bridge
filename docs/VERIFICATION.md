@@ -1,6 +1,28 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
+These are recorded results, not a guarantee of every environment. The latest live Chrome/provider checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
+
+## Optional PNG OCR candidate 0.5.21 — November 16, 2026
+
+Source/isolated package are 0.5.21. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 220 passed, 0 failed; one separately verified long command omitted from routine runs |
+| Four dedicated checks on macOS | Raster text/geometry/truncation, blank/transparent images, corrupted/oversized/high-depth PNGs, strict args/stale hashes/private/research/link/size denials, and worker denial of user-file reads/writes/TCP. Linux has a separate unsupported-backend assertion |
+| Backend prototype | Vision accurate mode failed with E5RT compiler initialization errors. Removing filesystem read restrictions in an isolated diagnostic did not fix it. Fast CPU revision 1 English succeeded with the original restrictions restored; only that mode is exposed |
+| Isolated package | Native/tooling/WASM release builds exited 0; source/package/manifest/native versions matched 0.5.21 |
+| Public raster | Packaged Native Messaging recognized exactly `Dummy PDF file` from the PNG previously rendered from W3C's public PDF |
+| Repository report | Recognized 17 regions from the actual generated project brief. Text/boxes/confidence returned; errors such as `paste iL`, `projert`, `prowder` and `113` for the page footer were retained in evidence |
+| Accuracy test correction | The first test incorrectly required exact recognition of `WRITING`; Vision returned `WRrrING`. The test now checks the expected heading/prefix and >90% character similarity for two clear lines. Exact policy/budget assertions are unchanged; this is not a lossless-text claim |
+| Denials/restart | Explicit 256-byte truncation; changed hash, traversal, unknown language field and hard links refused. Original PNG hashes unchanged. Repeated public-page recognition after host restart matched |
+| Installed checks | 41 self-tests passed; doctor verified config/manifest/binary/SQLite and 20 matching audit entries |
+| Previous CI | 0.5.19 run 43964530182 passed Linux/Intel tests; packaging still running. 0.5.20 run 43966311041 passed Linux; Intel jobs still running when checked |
+| Browser/physical Intel | New OCR control compiled; live panel/provider acceptance and the physical older Intel Mac remain unverified |
+
+Public raster SHA256 `6bdc49ae22aac99c95725e2355f3ccaf96e49dec339e5926c42a2dece686a90c`. Report raster SHA256 `768a16bfd37b0e3b2019b47357e4d322b0fc849f533d3e01693f4964733196e7`. Native SHA256 `c05aad1d7c01355f48b096eba9f4d6920ca9c627e24a420511a6a41eed082d17`; WASM SHA256 `92f27f7fc721e90f6eb21e6e841f6280535a8919fc75563d60583dd225265ec1`. Input copies, full OCR results, raw framed messages and logs are local in ignored `docs/evidence/0.5.21/`.
+
+This is bounded fast English OCR, with expected recognition errors, not general image understanding or image attachment. No accurate-mode fallback, other language selector, PDF password bypass or cloud OCR exists. See [OCR scope and restrictions](OCR.md).
 
 ## PCM WAV candidate 0.5.20 — November 16, 2026
 

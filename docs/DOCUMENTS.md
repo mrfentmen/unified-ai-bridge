@@ -50,3 +50,7 @@ PDF bounds:
 Six PDF integration tests cover text pagination/page attribution, empty pages, crop/rotation/pixel results, source preservation, approvals and policy changes, malformed/encrypted/oversized input, protected research destinations and links. A separate worker test checks actual filesystem/network denials. Public-document evidence and rendered-page inspection are recorded in [verification](VERIFICATION.md).
 
 UAB-16 remains open for live browser acceptance, OCR, DOCX rendering and additional Word content.
+
+## Optional PNG OCR (0.5.21 candidate)
+
+`ocr_image` can recognize English text in a saved plain PNG on macOS using a restricted fast CPU Vision worker. For a scanned PDF, approve page previews first, then OCR the saved page. Recognition can be wrong; this is not general image understanding or an attachment workflow. Other document tools still do not perform OCR implicitly. See [scope, limits and accuracy warnings](OCR.md).

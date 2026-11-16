@@ -14,6 +14,7 @@ pub mod tables;
 pub mod documents;
 pub mod document_create;
 pub mod media;
+pub mod ocr;
 pub mod pdf;
 pub mod workbooks;
 pub mod network;
@@ -546,6 +547,7 @@ pub async fn dispatch(
         "git_show" => git_review::show(&context, arguments).await,
         "read_table" => tables::read(&context, arguments).await,
         "query_table" => tables::query(&context, arguments).await,
+        "ocr_image" => ocr::recognize(&context, arguments).await,
         "media_info" => media::info(&context, arguments).await,
         "transform_media" => media::transform(&context, arguments).await,
         "create_document" => document_create::create(&context, arguments).await,
@@ -583,6 +585,7 @@ pub async fn dispatch(
                     | "query_table"
                     | "document_info"
                     | "media_info"
+                    | "ocr_image"
                     | "inspect_workbook"
                     | "read_sheet_range"
                     | "integration_status"
