@@ -511,6 +511,12 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let zip_destination = RwSignal::new(String::new());
     let zip_files = RwSignal::new("[]".to_string());
     let zip_hash = RwSignal::new(String::new());
+    let image_path = RwSignal::new(String::new());
+    let image_destination = RwSignal::new(String::new());
+    let image_hash = RwSignal::new(String::new());
+    let image_operation =
+        RwSignal::new("{\"kind\":\"resize\",\"width\":256,\"height\":256}".to_string());
+    let image_format = RwSignal::new("png".to_string());
     let result = RwSignal::new(serde_json::Value::Null);
     let busy = RwSignal::new(false);
     let displayed_workspace = RwSignal::new(String::new());
@@ -524,6 +530,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             patch_preview_json.set(String::new());
             patch_session.set(String::new());
             zip_hash.set(String::new());
+            image_hash.set(String::new());
             expected.set(None);
             result.set(serde_json::Value::Null);
         }
@@ -566,6 +573,9 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     }
                     if value["status"]=="ok" && name=="list_archive" && args["path"].as_str()==Some(zip_path.get_untracked().as_str()) {
                         zip_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());
+                    }
+                    if value["status"]=="ok" && name=="image_info" && args["path"].as_str()==Some(image_path.get_untracked().as_str()) {
+                        image_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());
                     }
                     if value["status"]!="ok" {error.set(Some(value["error"].as_str().unwrap_or("Tool failed").to_string()));}
                     else{error.set(None);}
@@ -619,6 +629,17 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <button style=CONTROL_STYLE disabled=move||busy.get()||zip_hash.get().is_empty()||zip_destination.get().is_empty() on:click=move |_|execute("extract_archive".into(),json!({"path":zip_path.get(),"destination":zip_destination.get(),"expected_sha256":zip_hash.get()}))>"Request ZIP extraction"</button>
                     <textarea aria-label="Archive source paths JSON" style=CONTROL_STYLE rows="3" placeholder="[\"files/main.rs\",\"notes/readme.md\"]" prop:value=move||zip_files.get() on:input=move|ev|zip_files.set(event_target_value(&ev))></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||zip_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&zip_files.get()){Ok(paths)=>execute("create_archive".into(),json!({"paths":paths,"destination":zip_destination.get()})),Err(err)=>error.set(Some(format!("Invalid file list JSON: {err}")))}}>"Request ZIP creation"</button>
+                </details>
+                <details><summary>"Image files"</summary>
+                    <p>"Inspect PNG/JPEG/WebP. Resize, crop, rotate or convert into a new approved file. Exact resize may change aspect ratio. Animation, ICC profiles, high bit depth and transparent JPEG output are refused. This does not attach images to chats."</p>
+                    <input aria-label="Image file path" style=CONTROL_STYLE placeholder="files/image.png" prop:value=move||image_path.get() on:input=move|ev|{image_path.set(event_target_value(&ev));image_hash.set(String::new());}/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||image_path.get().is_empty() on:click=move |_|{image_hash.set(String::new());execute("image_info".into(),json!({"path":image_path.get()}));}>"Inspect image"</button>
+                    <div>{move||if image_hash.get().is_empty(){"Inspect to obtain the image hash.".into()}else{format!("Inspected SHA256: {}",image_hash.get())}}</div>
+                    <input aria-label="Image destination" style=CONTROL_STYLE placeholder="files/resized.png (new file)" prop:value=move||image_destination.get() on:input=move|ev|image_destination.set(event_target_value(&ev))/>
+                    <select aria-label="Image output format" style=CONTROL_STYLE prop:value=move||image_format.get() on:change=move|ev|image_format.set(event_target_value(&ev))><option value="png">"PNG"</option><option value="jpeg">"JPEG (lossy, opaque only)"</option><option value="webp">"WebP (lossless)"</option></select>
+                    <textarea aria-label="Image operation JSON" style=CONTROL_STYLE rows="3" prop:value=move||image_operation.get() on:input=move|ev|image_operation.set(event_target_value(&ev))></textarea>
+                    <div>"Operations: resize (width, height), crop (x, y, width, height), rotate (degrees: 90, 180, 270), convert. Source orientation is normalized before coordinates apply."</div>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||image_hash.get().is_empty()||image_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&image_operation.get()){Ok(op)=>execute("transform_image".into(),json!({"path":image_path.get(),"destination":image_destination.get(),"expected_sha256":image_hash.get(),"operation":op,"format":image_format.get()})),Err(err)=>error.set(Some(format!("Invalid image operation JSON: {err}")))}}>"Request image transform"</button>
                 </details>
                 <details><summary>"Run any available tool"</summary>
                     <select aria-label="Tool" style=CONTROL_STYLE on:change=move|ev|tool.set(event_target_value(&ev))>

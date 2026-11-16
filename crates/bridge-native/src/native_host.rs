@@ -432,7 +432,8 @@ pub async fn run() -> Result<()> {
                             let _running = RunningRequest(in_flight);
                             let started = Instant::now();
                             let path = arguments
-                                .get("path")
+                                .get("destination")
+                                .or_else(|| arguments.get("path"))
                                 .and_then(serde_json::Value::as_str)
                                 .map(str::to_owned);
                             let execution = async {
@@ -1034,7 +1035,8 @@ pub async fn run() -> Result<()> {
                     let _running = RunningRequest(count);
                     let started = Instant::now();
                     let path = arguments
-                        .get("path")
+                        .get("destination")
+                        .or_else(|| arguments.get("path"))
                         .and_then(serde_json::Value::as_str)
                         .map(str::to_owned);
                     let execution = async {

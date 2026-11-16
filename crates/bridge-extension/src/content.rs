@@ -744,6 +744,8 @@ fn render(state: &ContentState) {
     let (dot, state_text) = if error.is_some() {
         if state.connected {
             ("#e0a63a", "Connected with a reported error".to_string())
+        } else if state.session_id.is_some() && state.bridge == "connected" {
+            ("#e0a63a", "Session ready · chat setup needs attention".to_string())
         } else {
             ("#e05a5a", "Not connected".to_string())
         }

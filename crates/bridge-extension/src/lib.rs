@@ -17,7 +17,7 @@ mod popup;
 #[extension(
     name = "Unified AI Bridge",
     description = "Permission-checked local tools for ChatGPT, Claude, DeepSeek, Gemini, Grok, Qwen, and Kimi through one Rust native backend.",
-    version = "0.5.5",
+    version = "0.5.6",
     permissions = [Storage, NativeMessaging, Downloads],
     host_permissions = [
         "https://chatgpt.com/*",

@@ -1,6 +1,35 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.5**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The full provider acceptance matrix below remains historical.
+These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.6**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The full provider acceptance matrix below remains historical.
+
+## Image file controls 0.5.6 — November 16, 2026
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 127 passed, 0 failed; one deliberately slow command test ignored in the routine run |
+| Image tests | Six integration tests passed: exact crop/rotation pixels, PNG/JPEG/WebP reopening, alpha preservation, EXIF normalization, strict nested arguments, corrupt/oversized inputs, animation/ICC/high-bit-depth refusals, stale hashes, protected paths, symlinks, lock and approval denials |
+| Installed selftest | 41 passed, 0 failed in a temporary workspace |
+| Build/install | Native/tooling and WASM release exit 0; source and generated manifest both 0.5.6; installed binary SHA-256 and exact native messaging origin verified |
+| Loaded build | Chrome extension details, Kimi shadow panel and fresh host hello agree on 0.5.6/protocol 6 |
+| Live resize | Extension controls inspected an existing project icon copied into the scratch workspace, then approved a PNG resize from 128×128 to 64×64. The output was reopened and visually inspected |
+| Live denial | Denying a separate transform through extension controls returned an approval denial and left its destination absent |
+| Draft status | Kimi preserved its draft and correctly reported “Session ready · chat setup needs attention” alongside native bridge connected |
+| Doctor | Configuration, manifest, installed binary, SQLite integrity and audit chain passed |
+| Limitations | Still-image subset only; no binary replacement/undo, visual understanding or provider attachment claim. macOS requested Desktop access again after rebuilding; persistent consent remains unresolved |
+
+The source `files/bridge-056-source.png` was **1,482 bytes**, SHA-256 `292b200b9b667bbaefb4a55fddc30dfd2cc27d3093fd00eaf954db393a425850`, unchanged after the operation. The output `files/bridge-056-resized.png` was **1,567 bytes**, SHA-256 `870d85321ed8fd647f2288bb768daf7a247b2da5a9d367b01eb6494eb5a9b1bb`, matching the reviewed output hash. This input is the project's existing icon, not a provider-generated image.
+
+Observed host log excerpts (UTC, private identifiers omitted):
+
+```text
+17:38:10.904 extension hello (0.5.6)
+17:38:10.930 registered Kimi ... extension=Some("0.5.6")
+17:39:02.754 panel tool image_info ok ... path=Some("files/bridge-056-source.png")
+17:40:03.729 panel tool transform_image ok ... path=Some("files/bridge-056-resized.png")
+17:41:12.866 panel tool transform_image error ... path=Some("files/bridge-056-denied.png")
+```
+
+The denial was separately recorded as `approval denied: the user denied permission for transform_image`. Raw receipts, build/test logs and browser readings are retained in ignored `docs/evidence/0.5.6/`. These are panel/host/filesystem checks. See [image controls and limitations](IMAGES.md).
 
 ## ZIP archive controls 0.5.5 — November 16, 2026
 
