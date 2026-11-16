@@ -6,7 +6,7 @@ In **Files, preview and restore → Code navigation**, enter a folder and query 
 
 These controls have built successfully but are not yet verified in a live Chrome session. The normal browser package remains 0.5.7; 0.5.9 is an isolated candidate.
 
-Intel CI later exposed excessive repeated policy compilation during search in 0.5.9. The 0.5.10 candidate reuses the compiled policy within a single call while recomputing path resolution for every file. It never caches policy across calls or workspace switches. The local five-check navigation suite passes; Intel confirmation is pending.
+Intel CI later exposed excessive repeated policy compilation during search in 0.5.9. The 0.5.10 candidate reuses the compiled policy within a single call while recomputing path resolution for every file. It never caches policy across calls or workspace switches. The local five-check navigation suite passes, and run 43938573686 passed Linux and Intel macOS tests with the original 100-file assertion intact.
 
 ## Literal search
 

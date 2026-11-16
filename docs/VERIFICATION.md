@@ -2,6 +2,23 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## CSV/TSV candidate 0.5.12 — November 16, 2026
+
+The source and isolated package are 0.5.12. Normal Chrome files and installed host remain 0.5.7; browser acceptance is pending.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 166 passed, 0 failed; one separately exercised long job omitted from routine runs |
+| Five table tests | Quoted/multiline Unicode records; physical line numbers; column projection; stale-page refusal; all-matched-record aggregates; skipped numeric values; input/output limits; private/traversal/link/unknown-field denials; unchanged research dataset |
+| Isolated package | Final WASM/native/tooling builds exited 0 and versions matched 0.5.12. An initial Leptos event-expression parsing error was corrected before the final suite/build |
+| Actual data | CSV exported from this repository's Git history contained 19 records. read_table returned the correct first commit and continued at record 4 |
+| Actual query | Subjects containing Git matched two records. Independently computed subject-byte total was 129; query_table returned sum 129, mean 64.5, min 60, max 69 across both records despite a one-row display page |
+| Denial and stale input | Private .env read was denied. An independent CSV append caused continuation to return file_changed |
+| Installed checks | 41 self-tests passed; doctor passed config/binary/manifest/SQLite and 13 matching audit entries |
+| Intel regression | 0.5.10 run 43938573686 passed Linux and Intel macOS tests, confirming the search performance correction; packaging was still running at this observation |
+
+Original exported CSV SHA-256: `69ce812f4944ab13252d1df96dee2a9ab2fbc8b319f783d92ab07604ef111e4f`. Installed binary SHA-256: `f548cf16d981db5a7172759c93511f10ba1947c9905a04cfa729bcc1f36b30f7`. Raw outputs are in ignored `docs/evidence/0.5.12/`. These are native transport checks on real repository data, not an AI website integration. [Supported table semantics](TABLES.md).
+
 ## Reviewed Git commit candidate 0.5.11 — November 16, 2026
 
 The source and isolated package are 0.5.11. The normal Chrome package and native installation remain 0.5.7; these are host/transport checks, not live website acceptance.
@@ -28,7 +45,7 @@ The source and isolated package are 0.5.10. The normal Chrome package and instal
 | Workspace suite | 151 passed, 0 failed; one deliberately slow test excluded from the routine run |
 | Long-command acceptance | Separately ran the ignored real Cargo job: completed with exit 0 after 249.608 seconds, with saved output read through reopened host state. The test itself slept 245 seconds. This proves duration/recovery handling, not unattended browser task orchestration |
 | Seven Git tests | Real staged/unstaged differences; private-path denial; unchanged index; unrelated edits preserved; literal filenames; metadata/config boundaries; blocked external filters; count/byte limits |
-| Intel search correction | 0.5.9 CI run 43934903095 failed the 100-file search assertion on Intel macOS: repeated private-policy compilation consumed the two-second budget. 0.5.10 compiles policy once per call while still resolving/checking every path. All five navigation checks pass locally; Intel CI confirmation is pending |
+| Intel search correction | 0.5.9 CI run 43934903095 failed the 100-file search assertion on Intel macOS: repeated private-policy compilation consumed the two-second budget. 0.5.10 compiles policy once per call while still resolving/checking every path. Run 43938573686 passed Linux and Intel macOS tests with the original assertion intact; packaging was still running at this observation |
 | Isolated package | Pinned WASM/native/tooling release builds exited 0. Source/package/manifest and installed native version all 0.5.10; normal package remains 0.5.7 |
 | Native transport | Actual installed host returned 0.5.10/protocol 6; staged diff of copied recovery.rs contained the new line, private selection/traversal were denied, branch was main, index and unrelated file hashes were unchanged |
 | Installed checks | 41 self-tests passed; doctor passed config, binary/manifest, SQLite and 13 matching audit entries |

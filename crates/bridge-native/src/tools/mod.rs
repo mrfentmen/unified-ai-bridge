@@ -10,6 +10,7 @@ pub mod development;
 pub mod code_navigation;
 pub mod git;
 pub mod git_review;
+pub mod tables;
 pub mod file_extra;
 pub mod filesystem;
 pub mod recovery;
@@ -533,6 +534,8 @@ pub async fn dispatch(
         "git_commit_status" => git_review::status(&context, arguments).await,
         "git_log" => git_review::log(&context, arguments).await,
         "git_show" => git_review::show(&context, arguments).await,
+        "read_table" => tables::read(&context, arguments).await,
+        "query_table" => tables::query(&context, arguments).await,
         "git_diff" => development::git_diff(&context, arguments).await,
         "inspect_repository" => development::inspect_repository(&context, arguments).await,
         "run_approved_script" => development::run_approved_script(&context, arguments).await,
@@ -558,6 +561,8 @@ pub async fn dispatch(
                     | "git_status"
                     | "git_log"
                     | "git_show"
+                    | "read_table"
+                    | "query_table"
                     | "git_commit_status"
                     | "git_diff"
                     | "inspect_repository"
