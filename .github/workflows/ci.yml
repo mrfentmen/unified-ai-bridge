@@ -32,11 +32,12 @@ jobs:
   package:
     runs-on: macos-14
     timeout-minutes: 40
-    env:
-      UAB_HOME: ${{ runner.temp }}/uab-home
-      UAB_NATIVE_HOSTS_DIR: ${{ runner.temp }}/uab-native-hosts
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Isolate installation paths
+        run: |
+          echo "UAB_HOME=$RUNNER_TEMP/uab-home" >> "$GITHUB_ENV"
+          echo "UAB_NATIVE_HOSTS_DIR=$RUNNER_TEMP/uab-native-hosts" >> "$GITHUB_ENV"
       - name: Install pinned build tools
         run: |
           rustup toolchain install 1.99.1 --profile minimal --target wasm32-unknown-unknown
