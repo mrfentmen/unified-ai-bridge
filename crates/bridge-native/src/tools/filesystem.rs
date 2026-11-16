@@ -524,26 +524,34 @@ pub async fn move_file(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome
         )));
     }
     ctx.check_read("move_file", &source)?;
-    ctx.authorize_write("move_file", &destination).await?;
+    if !fs::symlink_metadata(&source.absolute)
+        .map_err(|err| ToolFailure::from_io("inspect move source", err))?
+        .is_file()
+    {
+        return Err(ToolFailure::Unsupported("only regular files can be moved".into()));
+    }
+    let before = fsops::sha256_file(&source.absolute)
+        .map_err(|err| ToolFailure::Io(err.to_string()))?;
+    let destination_approved = ctx.authorize_write("move_file", &destination).await?;
     let own_source = source
         .relative
         .to_string_lossy()
         .starts_with(&format!("AGENTS/{}/", ctx.agent.dir()));
-    if own_source
+    let source_access = if own_source
         && destination
             .relative
             .to_string_lossy()
             .starts_with(&format!("AGENTS/{}/", ctx.agent.dir()))
     {
-        ctx.authorize_write("move_file", &source).await?;
+        crate::sandbox::Access::Write
     } else {
-        ctx.authorize_remove("move_file", &source).await?;
-    }
-    let Some(parent) = destination.absolute.parent() else {
-        return Err(ToolFailure::InvalidArguments("invalid destination".into()));
+        crate::sandbox::Access::Remove
     };
-    fs::create_dir_all(parent)
-        .map_err(|err| ToolFailure::Io(format!("create destination folder: {err}")))?;
+    let source_approved = if source_access == crate::sandbox::Access::Write {
+        ctx.authorize_write("move_file", &source).await?
+    } else {
+        ctx.authorize_remove("move_file", &source).await?
+    };
     let a = source.relative.to_string_lossy().to_string();
     let b = destination.relative.to_string_lossy().to_string();
     let (first, second) = if a <= b {
@@ -555,10 +563,38 @@ pub async fn move_file(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome
         .map_err(|err| ToolFailure::Internal(err.to_string()))?;
     let _lock_two = fsops::PathLock::acquire(&ctx.app.workspace.lock_dir, &second)
         .map_err(|err| ToolFailure::Internal(err.to_string()))?;
-    let (hash, bytes) =
-        fsops::sha256_file(&source.absolute).map_err(|err| ToolFailure::Io(err.to_string()))?;
-    fs::rename(&source.absolute, &destination.absolute)
-        .map_err(|err| ToolFailure::Io(format!("move file: {err}")))?;
+    let current_source = ctx.resolve_existing(&args.source)?;
+    let current_destination = ctx.resolve_any(&args.destination)?;
+    if current_source.absolute != source.absolute
+        || current_destination.absolute != destination.absolute
+        || current_destination.exists
+    {
+        return Err(ToolFailure::Conflict("move target changed during approval".into()));
+    }
+    ctx.check_read("move_file", &current_source)?;
+    ctx.recheck_access(source_access, &current_source, source_approved)?;
+    ctx.recheck_access(crate::sandbox::Access::Write, &current_destination, destination_approved)?;
+    if !fs::symlink_metadata(&current_source.absolute)
+        .map_err(|err| ToolFailure::from_io("inspect move source", err))?
+        .is_file()
+        || fsops::sha256_file(&current_source.absolute)
+            .map_err(|err| ToolFailure::Io(err.to_string()))? != before
+    {
+        return Err(ToolFailure::Conflict("move source changed during approval".into()));
+    }
+    let Some(parent) = destination.absolute.parent() else {
+        return Err(ToolFailure::InvalidArguments("invalid destination".into()));
+    };
+    fs::create_dir_all(parent)
+        .map_err(|err| ToolFailure::Io(format!("create destination folder: {err}")))?;
+    fsops::rename_no_replace(&source.absolute, &destination.absolute).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::AlreadyExists {
+            ToolFailure::Conflict("move destination appeared; no files were replaced".into())
+        } else {
+            ToolFailure::from_io("move file", err)
+        }
+    })?;
+    let (hash, bytes) = before;
     ctx.app
         .audit_path_access(
             ctx.agent,

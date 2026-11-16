@@ -7,6 +7,37 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+/// Atomically move without replacing any destination (including a dangling
+/// symlink). Fail closed on unsupported platforms/filesystems; checking exists
+/// before ordinary rename is not sufficient against an independent writer.
+pub fn rename_no_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
+        let source = CString::new(source.as_os_str().as_bytes())?;
+        let destination = CString::new(destination.as_os_str().as_bytes())?;
+        // SAFETY: both strings are NUL-terminated and live for the syscall.
+        #[cfg(target_os = "macos")]
+        let result = unsafe {
+            libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL)
+        };
+        #[cfg(target_os = "linux")]
+        let result = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD, source.as_ptr(), libc::AT_FDCWD,
+                destination.as_ptr(), libc::RENAME_NOREPLACE,
+            )
+        };
+        if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = (source, destination);
+        Err(std::io::Error::new(std::io::ErrorKind::Unsupported,
+            "atomic no-replace rename is unavailable on this platform"))
+    }
+}
+
 pub fn sha256_file(path: &Path) -> Result<(String, u64)> {
     let mut file =
         File::open(path).with_context(|| format!("open {} for hashing", path.display()))?;
@@ -158,7 +189,11 @@ pub fn atomic_write_locked(
         file.write_all(content)?;
         file.sync_all()?;
         drop(file);
-        fs::rename(&temp, target)
+        if create_only {
+            rename_no_replace(&temp, target)
+        } else {
+            fs::rename(&temp, target)
+        }
             .with_context(|| format!("atomically replace {}", target.display()))?;
         if let Some(parent) = target.parent() {
             if let Ok(dir) = File::open(parent) {
@@ -191,6 +226,46 @@ pub fn display_relative(root: &Path, path: &Path) -> String {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn no_replace_race_has_one_winner_and_keeps_the_loser() {
+        let temp = tempdir().unwrap();
+        let destination = temp.path().join("destination");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = ["first", "second"].into_iter().map(|name| {
+            let source = temp.path().join(name);
+            fs::write(&source, name).unwrap();
+            let destination = destination.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                (source.clone(), rename_no_replace(&source, &destination))
+            })
+        }).collect();
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(results.iter().filter(|(_, r)| r.is_ok()).count(), 1);
+        for (source, result) in results {
+            if let Err(error) = result {
+                assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+                assert_eq!(fs::read_to_string(&source).unwrap(), source.file_name().unwrap().to_str().unwrap());
+            } else {
+                assert!(!source.exists());
+                assert_eq!(fs::read_to_string(&destination).unwrap(), source.file_name().unwrap().to_str().unwrap());
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_only_preserves_dangling_symlink() {
+        let temp = tempdir().unwrap();
+        let target = temp.path().join("target");
+        std::os::unix::fs::symlink("missing", &target).unwrap();
+        assert!(atomic_write_locked(&temp.path().join("checkpoints"), Path::new("target"), &target, b"no", true).is_err());
+        assert_eq!(fs::read_link(&target).unwrap(), Path::new("missing"));
+        assert!(!temp.path().join("missing").exists());
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1, "temporary write cleaned up");
+    }
 
     #[test]
     fn atomic_write_checkpoints_previous_content() {

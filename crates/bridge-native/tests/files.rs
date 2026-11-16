@@ -54,6 +54,173 @@ fn ok(result: ToolResultMessage) -> Value {
     result.data.unwrap()
 }
 
+async fn during_approval(
+    app: &Arc<App>, tool: &'static str, args: Value, change: impl FnOnce(),
+) -> ToolResultMessage {
+    let mut events = app.events.subscribe();
+    let a = app.clone();
+    let pending = tokio::spawn(async move { call(&a, tool, args).await });
+    loop {
+        if let BridgeEvent::ApprovalRequired { approval } =
+            tokio::time::timeout(std::time::Duration::from_secs(3), events.recv())
+                .await.unwrap().unwrap()
+        {
+            change();
+            assert!(app.approvals.resolve(&approval.id, true));
+            break;
+        }
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(3), pending).await.unwrap().unwrap()
+}
+
+fn policy(app: &App, read_only: bool, strict: bool) {
+    use bridge_core::workspace::PermissionMode;
+    let mut info = app.store.workspaces().unwrap().into_iter()
+        .find(|w| w.id == app.workspace.id()).unwrap();
+    info.read_only = read_only;
+    info.permission_mode = if strict { PermissionMode::Strict } else { PermissionMode::Standard };
+    app.store.save_workspace(&info).unwrap();
+}
+
+#[tokio::test]
+async fn strict_folder_creation_requires_approval_in_every_profile() {
+    for profile in [Profile::Research, Profile::General, Profile::Code] {
+        let temp = tempfile::tempdir().unwrap();
+        let app = fixture(&temp, profile);
+        policy(&app, false, true);
+        let path = if profile == Profile::Research { "AGENTS/CHATGPT/strict-folder" } else { "strict-folder" };
+        let args = json!({"path":path});
+        let denied = approve(&app, "create_folder", args.clone(), false).await;
+        assert_eq!(denied.code.as_deref(), Some("approval_denied"));
+        assert!(!app.workspace.root.join(path).exists());
+        let allowed = approve(&app, "create_folder", args, true).await;
+        assert_eq!(allowed.status, "ok", "{allowed:?}");
+        assert!(app.workspace.root.join(path).is_dir());
+        if profile == Profile::Research {
+            let result = approve(&app, "create_folder", json!({"path":"COLLABORATION/proposals/strict-folder"}), true).await;
+            assert_eq!(result.status, "ok");
+            for denied in ["SHARED/datasets/strict-folder", "AGENTS/CLAUDE/strict-folder"] {
+                let result = tokio::time::timeout(std::time::Duration::from_secs(3),
+                    call(&app, "create_folder", json!({"path":denied}))).await.unwrap();
+                assert_eq!(result.code.as_deref(), Some("permission_denied"));
+                assert!(!app.workspace.root.join(denied).exists());
+            }
+        }
+        assert!(app.store.verify_audit().unwrap().valid);
+    }
+}
+
+#[tokio::test]
+async fn move_refuses_destination_created_during_approval() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = fixture(&temp, Profile::General);
+    let source = app.workspace.root.join("files/source.md");
+    let destination = app.workspace.root.join("files/destination.md");
+    std::fs::write(&source, "source").unwrap();
+    let result = during_approval(&app, "move_file",
+        json!({"source":"files/source.md","destination":"files/destination.md"}), || {
+            std::fs::write(&destination, "independent new destination").unwrap();
+        }).await;
+    assert_eq!(result.code.as_deref(), Some("file_changed"), "{result:?}");
+    assert_eq!(std::fs::read(&source).unwrap(), b"source");
+    assert_eq!(std::fs::read(&destination).unwrap(), b"independent new destination");
+    assert!(app.store.verify_audit().unwrap().valid);
+}
+
+#[tokio::test]
+async fn move_rechecks_source_and_policy_after_approval() {
+    for mutation in ["source", "lock", "strict"] {
+        let temp = tempfile::tempdir().unwrap();
+        let app = fixture(&temp, Profile::General);
+        let source = app.workspace.root.join("files/source.md");
+        std::fs::write(&source, "source").unwrap();
+        let result = during_approval(&app, "move_file",
+            json!({"source":"files/source.md","destination":"files/new/destination.md"}), || {
+                match mutation {
+                    "source" => std::fs::write(&source, "user edit").unwrap(),
+                    "lock" => policy(&app, true, false),
+                    _ => policy(&app, false, true),
+                }
+            }).await;
+        assert_eq!(result.code.as_deref(), Some(if mutation == "source" { "file_changed" } else { "permission_denied" }), "{result:?}");
+        assert_eq!(std::fs::read(&source).unwrap(), if mutation == "source" { b"user edit".as_slice() } else { b"source".as_slice() });
+        assert!(!app.workspace.root.join("files/new").exists());
+        assert!(app.store.verify_audit().unwrap().valid);
+    }
+}
+
+#[tokio::test]
+async fn move_approval_allow_and_deny_preserve_expected_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = fixture(&temp, Profile::General);
+    let source = app.workspace.root.join("files/source.md");
+    let destination = app.workspace.root.join("files/new/destination.md");
+    std::fs::write(&source, "source").unwrap();
+    let args = json!({"source":"files/source.md","destination":"files/new/destination.md"});
+    assert_eq!(approve(&app, "move_file", args.clone(), false).await.code.as_deref(), Some("approval_denied"));
+    assert_eq!(std::fs::read(&source).unwrap(), b"source");
+    assert!(!destination.exists());
+    assert_eq!(approve(&app, "move_file", args, true).await.status, "ok");
+    assert!(!source.exists());
+    assert_eq!(std::fs::read(destination).unwrap(), b"source");
+    assert!(app.store.verify_audit().unwrap().valid);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn legacy_mutations_reject_symlink_swaps_while_approval_waits() {
+    for tool in ["move_file", "create_folder"] {
+        for swap in ["source", "destination"] {
+            let temp = tempfile::tempdir().unwrap();
+            let app = fixture(&temp, Profile::General);
+            let outside = temp.path().join("outside");
+            std::fs::create_dir(&outside).unwrap();
+            let source = app.workspace.root.join("files/source.md");
+            std::fs::write(&source, "source").unwrap();
+            let destination_parent = app.workspace.root.join("files/new");
+            std::fs::create_dir(&destination_parent).unwrap();
+            if tool == "create_folder" { policy(&app, false, true); }
+            let args = if tool == "move_file" {
+                json!({"source":"files/source.md","destination":"files/new/destination.md"})
+            } else { json!({"path":"files/new/folder"}) };
+            let result = during_approval(&app, tool, args, || {
+                if tool == "move_file" && swap == "source" {
+                    std::fs::remove_file(&source).unwrap();
+                    std::os::unix::fs::symlink(outside.join("original"), &source).unwrap();
+                } else {
+                    std::fs::remove_dir(&destination_parent).unwrap();
+                    std::os::unix::fs::symlink(&outside, &destination_parent).unwrap();
+                }
+            }).await;
+            assert_eq!(result.code.as_deref(), Some("permission_denied"), "{result:?}");
+            assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+            assert!(app.store.verify_audit().unwrap().valid);
+        }
+    }
+}
+
+#[tokio::test]
+async fn folder_and_create_only_write_recheck_approval_wait_changes() {
+    for tool in ["create_folder", "write_document"] {
+        let temp = tempfile::tempdir().unwrap();
+        let app = fixture(&temp, Profile::General);
+        policy(&app, false, true);
+        let target = app.workspace.root.join("files/new.md");
+        let args = if tool == "create_folder" { json!({"path":"files/new.md"}) }
+            else { json!({"path":"files/new.md","content":"replace","create_only":true}) };
+        let result = during_approval(&app, tool, args, || std::fs::write(&target, "keep").unwrap()).await;
+        assert_eq!(result.code.as_deref(), Some("file_changed"), "{result:?}");
+        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let app = fixture(&temp, Profile::Research);
+    policy(&app, false, true);
+    let result = during_approval(&app, "create_folder", json!({"path":"AGENTS/CHATGPT/locked"}),
+        || policy(&app, true, true)).await;
+    assert_eq!(result.code.as_deref(), Some("permission_denied"));
+    assert!(!app.workspace.root.join("AGENTS/CHATGPT/locked").exists());
+}
+
 #[tokio::test]
 async fn real_files_preview_stale_edits_restore_and_restart() {
     let temp = tempfile::tempdir().unwrap();

@@ -170,6 +170,18 @@ impl Sandbox {
     /// Default permission matrix. The agent identity comes from the native
     /// host's registered session, never from a tool argument.
     pub fn decide(&self, agent: Agent, access: Access, path: &ResolvedPath) -> Decision {
+        let decision = self.decide_profile(agent, access, path);
+        if access != Access::Read
+            && self.permission_mode == PermissionMode::Strict
+            && matches!(decision, Decision::Allow)
+        {
+            Decision::Approval("Strict mode requires approval for writes".into())
+        } else {
+            decision
+        }
+    }
+
+    fn decide_profile(&self, agent: Agent, access: Access, path: &ResolvedPath) -> Decision {
         if self.excluded(&path.relative) {
             return Decision::Deny("path is excluded by the user's private-file policy".into());
         }
@@ -201,9 +213,6 @@ impl Sandbox {
                 Access::Remove => Decision::Approval(
                     "deleting files requires approval and moves them to trash".into(),
                 ),
-                Access::Write if self.permission_mode == PermissionMode::Strict => {
-                    Decision::Approval("Strict mode requires approval for writes".into())
-                }
                 Access::Write => Decision::Allow,
             };
         }

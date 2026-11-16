@@ -211,41 +211,26 @@ impl<'a> ToolContext<'a> {
         &self,
         tool: &str,
         path: &ResolvedPath,
-    ) -> Result<(), ToolFailure> {
-        match self.app.decide(self.agent, Access::Write, path) {
-            Decision::Allow => Ok(()),
-            Decision::Deny(reason) => {
-                let _ = self.app.audit_denial(
-                    self.agent,
-                    self.session_id,
-                    tool,
-                    Some(&path.display()),
-                    &reason,
-                    "denied",
-                );
-                Err(ToolFailure::PermissionDenied(reason))
-            }
-            Decision::Approval(reason) => {
-                self.app
-                    .request_approval(
-                        self.session_id,
-                        self.agent,
-                        tool,
-                        &reason,
-                        Some(path.display()),
-                    )
-                    .await
-            }
-        }
+    ) -> Result<bool, ToolFailure> {
+        self.authorize_access(tool, Access::Write, path).await
     }
 
     pub async fn authorize_remove(
         &self,
         tool: &str,
         path: &ResolvedPath,
-    ) -> Result<(), ToolFailure> {
-        match self.app.decide(self.agent, Access::Remove, path) {
-            Decision::Allow => Ok(()),
+    ) -> Result<bool, ToolFailure> {
+        self.authorize_access(tool, Access::Remove, path).await
+    }
+
+    async fn authorize_access(
+        &self,
+        tool: &str,
+        access: Access,
+        path: &ResolvedPath,
+    ) -> Result<bool, ToolFailure> {
+        match self.app.decide(self.agent, access, path) {
+            Decision::Allow => Ok(false),
             Decision::Deny(reason) => {
                 let _ = self.app.audit_denial(
                     self.agent,
@@ -266,8 +251,25 @@ impl<'a> ToolContext<'a> {
                         &reason,
                         Some(path.display()),
                     )
-                    .await
+                    .await?;
+                Ok(true)
             }
+        }
+    }
+
+    /// Revalidate after all approval waits, using the original workspace grant.
+    pub fn recheck_access(
+        &self,
+        access: Access,
+        path: &ResolvedPath,
+        approved: bool,
+    ) -> Result<(), ToolFailure> {
+        match self.app.decide(self.agent, access, path) {
+            Decision::Deny(reason) => Err(ToolFailure::PermissionDenied(reason)),
+            Decision::Approval(_) if !approved => Err(ToolFailure::PermissionDenied(
+                "write policy changed; request approval again".into(),
+            )),
+            _ => Ok(()),
         }
     }
 
@@ -348,7 +350,14 @@ impl<'a> ToolContext<'a> {
                 path.display()
             )));
         }
-        self.authorize_write(tool, &path).await?;
+        let approved = self.authorize_write(tool, &path).await?;
+        let _lock = fsops::PathLock::acquire(&self.app.workspace.lock_dir, &path.display())
+            .map_err(|err| ToolFailure::Internal(err.to_string()))?;
+        let current = self.resolve_any(raw)?;
+        if current.absolute != path.absolute || (current.exists && !current.is_dir) {
+            return Err(ToolFailure::Conflict("folder target changed during approval".into()));
+        }
+        self.recheck_access(Access::Write, &current, approved)?;
         fs::create_dir_all(&path.absolute)
             .map_err(|err| ToolFailure::Io(format!("create folder {}: {err}", path.display())))?;
         self.app

@@ -244,7 +244,7 @@ pub async fn mutate(
         )
         .map_err(internal)?
     } else {
-        fs::rename(&path.absolute, trash.expect("trash destination"))
+        fsops::rename_no_replace(&path.absolute, &trash.expect("trash destination"))
             .map_err(|e| ToolFailure::from_io("move to trash", e))?;
         if let Some(parent) = path.absolute.parent() {
             if let Ok(dir) = fs::File::open(parent) {

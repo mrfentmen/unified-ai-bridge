@@ -65,11 +65,9 @@ pub async fn desktop_screenshot(
                 "screenshot destination already exists; choose a new path".into(),
             ));
         }
-        ctx.authorize_write("desktop_screenshot", &resolved).await?;
-        if let Some(parent) = resolved.absolute.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|err| ToolFailure::Io(format!("create screenshot folder: {err}")))?;
-        }
+        let approved = ctx.authorize_write("desktop_screenshot", &resolved).await?;
+        let capture = tempfile::tempdir().map_err(|err| ToolFailure::from_io("create capture directory", err))?;
+        let captured = capture.path().join("capture.png");
         let mut command = Command::new("/usr/sbin/screencapture");
         command.arg("-x").arg("-t").arg("png");
         if let Some(region) = args.region.as_deref() {
@@ -81,7 +79,7 @@ pub async fn desktop_screenshot(
             command.arg("-R").arg(region);
         }
         command
-            .arg(&resolved.absolute)
+            .arg(&captured)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -102,8 +100,18 @@ pub async fn desktop_screenshot(
                 stderr.trim()
             )));
         }
-        let (sha256, bytes) = fsops::sha256_file(&resolved.absolute)
+        let _lock = fsops::PathLock::acquire(&ctx.app.workspace.lock_dir, &resolved.display())
+            .map_err(|err| ToolFailure::Internal(err.to_string()))?;
+        let current = ctx.resolve_any(&path)?;
+        if current.absolute != resolved.absolute || current.exists {
+            return Err(ToolFailure::Conflict("screenshot destination changed during approval/capture".into()));
+        }
+        ctx.recheck_access(crate::sandbox::Access::Write, &current, approved)?;
+        let content = fs::read(&captured).map_err(|err| ToolFailure::from_io("read capture", err))?;
+        let written = fsops::atomic_write_locked(&ctx.app.workspace.checkpoint_dir,
+            &current.relative, &current.absolute, &content, true)
             .map_err(|err| ToolFailure::Io(err.to_string()))?;
+        let (sha256, bytes) = (written.sha256, written.bytes);
         ctx.app
             .audit_path_access(
                 ctx.agent,

@@ -547,7 +547,11 @@ impl App {
         access: Access,
         path: &crate::sandbox::ResolvedPath,
     ) -> crate::sandbox::Decision {
-        self.sandbox().decide(agent, access, path)
+        if access == Access::Read {
+            self.sandbox().decide(agent, access, path)
+        } else {
+            self.current_write_decision(agent, access, path)
+        }
     }
 
     /// In-flight work keeps its original root, but cannot bypass a newly locked
@@ -558,7 +562,7 @@ impl App {
         access: Access,
         path: &crate::sandbox::ResolvedPath,
     ) -> crate::sandbox::Decision {
-        let original = self.decide(agent, access, path);
+        let original = self.sandbox().decide(agent, access, path);
         if matches!(original, crate::sandbox::Decision::Deny(_)) {
             return original;
         }
