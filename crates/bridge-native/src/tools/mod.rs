@@ -1,4 +1,5 @@
 pub mod collaboration;
+pub mod artifacts;
 pub mod commands;
 pub mod desktop;
 pub mod development;
@@ -425,6 +426,8 @@ pub async fn dispatch(
     }
     let context = ToolContext::new(app, agent, session_id);
     let result = match tool {
+        "list_artifacts" => artifacts::list(&context, arguments).await,
+        "import_artifact" => artifacts::import(&context, arguments).await,
         "list_files" => filesystem::list_files(&context, arguments).await,
         "read_file" => filesystem::read_file(&context, arguments).await,
         "preview_document" => recovery::preview(&context, arguments).await,
@@ -488,6 +491,7 @@ pub async fn dispatch(
             if matches!(
                 tool,
                 "preview_document"
+                    | "list_artifacts"
                     | "list_changes"
                     | "file_tree"
                     | "glob_files"

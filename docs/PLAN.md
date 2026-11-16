@@ -11,9 +11,24 @@ The bridge should make everyday work in local folders dependable before taking o
 - Fixed command grants, bounded output and timeouts, plus reviewed native stdio MCP server discovery and calls.
 - A popup, side panel, in-page controls, activity filters, tool runner, and installation diagnostics.
 - Strict-mode approval across profiles, no-overwrite file moves, approval-wait revalidation, and regression tests for concurrent file/policy changes.
+- Explicit browser-download sharing and approval-gated binary import, with hashes, source preservation, session/workspace scoping, expiry and revocation.
 - GitHub workflows for tests, isolated extension/native packaging, and publication of tagged releases after checks pass.
 
 Implementation is not the same as acceptance. [Verification](VERIFICATION.md) records which behavior has actually been exercised.
+
+## Web-chat output workflow
+
+The next sequence uses the existing host and permission system:
+
+1. **Import generated files.** User-selected Chrome downloads, a per-session file grant, approval, bounded binary copy, original preservation, hash verification, no overwrites, and persistent receipts. The 0.5.0 implementation and usage are described in [Browser files](BROWSER-FILES.md); live evidence belongs in the verification record.
+2. **Send approved local files to a chat.** Explicit per-file upload approval, size/type checks, a selected conversation, and verified attachment completion. Local read access alone must not authorize upload.
+3. **Use each website's own creation tools.** Discover visible downloadable attachments, canvases and generated images/documents; support their ordinary UI controls. Record provenance and distinguish a preview from the original. No hidden endpoints or provider APIs.
+4. **Apply project changes together.** Multi-file previews, stale-file checks, per-file checkpoints and recovery. Report partial failures rather than claiming a filesystem-wide transaction.
+5. **Run and inspect projects.** Progress, cancellation and bounded polling for allowlisted commands; selected-tab browser preview and verification. Keep executable/argument grants explicit.
+6. **Understand documents and media.** Start with bounded PDF/Office text extraction and image inspection, then add format-specific editing or conversion only with tested tools and compatibility checks.
+7. **Track longer jobs.** Visible pending/running/completed/failed/cancelled states, deadlines, reconnect recovery, and exactly one terminal outcome. Never automatically repeat a mutation with an uncertain outcome.
+
+The importer is the current milestone. Uploads, automatic artifact discovery, website tool selection, media understanding and the rest of this sequence remain planned.
 
 ## First: finish the reliability gate
 

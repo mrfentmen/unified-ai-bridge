@@ -98,6 +98,18 @@ pub enum ExtToHost {
         tool: String,
         arguments: Value,
     },
+    RegisterArtifact {
+        request_key: String,
+        workspace_id: String,
+        session_id: String,
+        download: crate::tools::artifacts::SelectedDownload,
+    },
+    RevokeArtifact {
+        request_key: String,
+        workspace_id: String,
+        session_id: String,
+        artifact_id: String,
+    },
     CommandPresets {
         request_key: String,
     },

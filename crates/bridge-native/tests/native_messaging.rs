@@ -139,6 +139,37 @@ impl Drop for HostProcess {
 }
 
 #[test]
+fn selected_download_crosses_real_native_framing_and_requires_import_approval() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let root = temp.path().join("workspace");
+    let binary = binary();
+    setup_workspace(&binary, &home, &root);
+    let source=temp.path().canonicalize().unwrap().join("download.bin");
+    let bytes=b"\x00\xff\x80Actual framed binary import\n";
+    std::fs::write(&source,bytes).unwrap();
+    let mut host=HostProcess::start(&binary,&home,&[]);let session=host.register();
+    let share=json!({"type":"register_artifact","request_key":"panel-share","workspace_id":host.workspace_id,"session_id":session,
+        "download":{"download_id":17,"filename":source,"bytes":bytes.len(),"mime":"application/octet-stream","origin":"files.example"}});
+    host.send(&share);let registered=host.receive_until("control_result")["result"].clone();
+    assert!(registered["artifact_id"].is_string(),"{registered}");
+    host.send(&share);assert_eq!(host.receive_until("control_result")["result"],registered);
+    let list=host.tool(&session,"artifacts-list",0,"list_artifacts",json!({}));
+    assert_eq!(list["data"]["artifacts"][0],registered);
+    assert!(!list.to_string().contains(source.to_str().unwrap()));
+    let destination="AGENTS/CHATGPT/notes/imported.bin";
+    host.send(&json!({"type":"run_tool","request_key":"panel-import","workspace_id":host.workspace_id,"session_id":session,
+        "tool":"import_artifact","arguments":{"artifact_id":registered["artifact_id"],"path":destination}}));
+    let prompt=host.receive_until("approval_required");
+    assert!(!root.join(destination).exists());
+    host.send(&json!({"type":"approval_decision","approval_id":prompt["approval"]["id"],"allow":true}));
+    let result=host.receive_until("control_result")["result"].clone();assert_eq!(result["status"],"ok","{result}");
+    assert_eq!(std::fs::read(root.join(destination)).unwrap(),bytes);
+    assert_eq!(std::fs::read(source).unwrap(),bytes);
+    assert_eq!(result["data"]["sha256"],bridge_native::fsops::sha256_bytes(bytes));
+}
+
+#[test]
 fn panel_tools_are_attributed_deduplicated_and_require_current_workspace_and_approval() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");

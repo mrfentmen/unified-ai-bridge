@@ -13,11 +13,12 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.4.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.0** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
 - **Work on ordinary folders.** Read, search, create, edit, append, copy, compare, and organize text files. Batch reads, glob matching, and file trees keep larger tasks manageable.
+- **Bring downloaded chat files into a project.** Select a completed Chrome download, share it with one conversation, then approve a copy into the workspace. Images, PDFs, ZIPs and other files retain their bytes; imports check hashes and refuse overwrites. [How browser files work](docs/BROWSER-FILES.md).
 - **Review and recover edits.** Preview replacements, check file hashes before overwriting, inspect change history, and request a restore. Deletion moves files to workspace trash and requires approval.
 - **Use your own project commands.** Grant a specific executable, arguments, working directory, timeout, and output limit. The chat selects an allowed command; it cannot invent a shell command.
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
@@ -58,14 +59,14 @@ The implementation is Rust throughout: **Oxichrome** generates the extension pac
 
 | Website | What has been verified | Notes |
 | --- | --- | --- |
-| ChatGPT | Read → create → result, navigation and background connection | Live loop verified on 0.4.0; not rerun on 0.4.7 |
+| ChatGPT | Read → create → result, navigation and background connection | Live loop verified on 0.4.0; not rerun on 0.5.0 |
 | Claude | Read → create → result | Live loop verified on 0.4.0; the model omitted a requested punctuation mark |
 | DeepSeek | Read → create → result, navigation and background connection | Live loop verified on 0.4.0 |
 | Gemini | Read → create → result, navigation and background connection | Live loop verified on 0.4.0 |
 | Grok (`grok.com`) | Connection and a real read | Account usage limit blocked create-file verification |
 | Grok on X | Connection and conversation binding | File loop remains unverified |
 | Qwen | Read → create → read-back → denial, navigation and background connection | Verified on 0.4.6; use plain-text tool blocks and select one answer if two candidates appear |
-| Kimi | Read → create → read-back → denial, repeated reads, navigation and background connection | Verified on 0.4.6 |
+| Kimi | Read → create → read-back → denial, repeated reads, navigation and background connection; generated SVG download → approved import → read-back | General loop on 0.4.6; artifact import on 0.5.0 |
 
 Qwen sometimes hides rendered message text in background tabs. Its session stays connected, but tool execution may wait until you bring the tab into view. All adapters depend on website markup and can need updates when a provider changes its interface.
 
@@ -158,7 +159,7 @@ If a panel looks disconnected, first compare its build number with the extension
 
 If the composer contains your draft, the bridge leaves it alone. Finish or save that draft before sending a pending result. A selector warning means the website layout needs attention; it is not a reason to broaden file permissions.
 
-The 0.4.7 local checks passed **81 workspace tests and 41 host self-tests**, plus live manual approval, trash and restore checks. [GitHub CI](https://github.com/mrfentmen/unified-ai-bridge/actions/workflows/ci.yml) repeats the automated checks and packaging on clean runners. Details, boundaries, and a repeatable browser test are in [VERIFICATION.md](docs/VERIFICATION.md).
+The 0.5.0 local checks passed **91 workspace tests and 41 host self-tests**, plus a real Kimi-generated download, denied import, approved import, and in-conversation read-back with matching hashes. [GitHub CI](https://github.com/mrfentmen/unified-ai-bridge/actions/workflows/ci.yml) repeats automated checks and packaging on clean runners. Details and boundaries are in [VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Project layout
 

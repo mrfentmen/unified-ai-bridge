@@ -7,6 +7,8 @@ use wasm_bindgen::JsCast;
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(js_namespace = ["chrome", "downloads"], js_name = search, catch)]
+    pub fn downloads_search(query: &JsValue) -> Result<js_sys::Promise, JsValue>;
     #[wasm_bindgen(js_namespace = ["chrome", "runtime"], js_name = connectNative)]
     fn connect_native_port(application: &str) -> JsValue;
 

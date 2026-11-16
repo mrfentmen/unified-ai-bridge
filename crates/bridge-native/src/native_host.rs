@@ -809,6 +809,44 @@ pub async fn run() -> Result<()> {
                     send_control(&tx, request_key, result).await;
                 });
             }
+            request @ (ExtToHost::RegisterArtifact { .. } | ExtToHost::RevokeArtifact { .. }) => {
+                let request_key = match &request {
+                    ExtToHost::RegisterArtifact { request_key, .. } | ExtToHost::RevokeArtifact { request_key, .. } => request_key.clone(),
+                    _ => unreachable!(),
+                };
+                if !request_key.starts_with("panel-") || request_key.len() > 100 {
+                    send_error(&tx, "invalid_request_key", "Artifact grants require extension controls.".into(), Some(request_key)).await;
+                    continue;
+                }
+                let app = app.clone();
+                let tx = tx.clone();
+                let semaphore = semaphore.clone();
+                let log_path = log.path.clone();
+                tokio::spawn(async move {
+                    let _permit = semaphore.acquire_owned().await;
+                    let result = tokio::task::spawn_blocking(move || {
+                        let (session_id, outcome) = match request {
+                            ExtToHost::RegisterArtifact { session_id, workspace_id, download, .. } => {
+                                let outcome = tools::artifacts::register(&app, &session_id, &workspace_id, download);
+                                (session_id, outcome)
+                            },
+                            ExtToHost::RevokeArtifact { session_id, workspace_id, artifact_id, .. } => {
+                                let outcome = tools::artifacts::revoke(&app, &session_id, &workspace_id, &artifact_id);
+                                (session_id, outcome)
+                            },
+                            _ => unreachable!(),
+                        };
+                        if let Err(error) = &outcome {
+                            if let Ok(Some((_, agent))) = app.session_agent(&session_id) {
+                                let _ = app.audit_denial(agent, &session_id, "artifact.grant", None, &error.to_string(), "denied");
+                            }
+                        }
+                        HostLog::new(log_path).write("info", &format!("artifact control session={session_id} workspace={:?} result={}", app.workspace.root, if outcome.is_ok(){"ok"}else{"error"}));
+                        outcome.map_err(anyhow::Error::from)
+                    }).await.unwrap_or_else(|error| Err(anyhow::anyhow!("artifact control failed: {error}")));
+                    send_control(&tx, request_key, result).await;
+                });
+            }
             ExtToHost::RunTool {
                 request_key,
                 workspace_id,

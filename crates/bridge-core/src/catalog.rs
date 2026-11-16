@@ -48,6 +48,17 @@ impl Category {
 const PATH: &str = r#"{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative path"}},"required":["path"],"additionalProperties":false}"#;
 
 pub const TOOLS: &[ToolSpec] = &[
+    ToolSpec {
+        name: "list_artifacts", category: Category::Filesystem,
+        description: "List browser downloads explicitly shared with this session and workspace. Returns metadata only; never browses Downloads or discovers website files automatically.",
+        arguments: "(none)", schema: r#"{"type":"object","properties":{},"additionalProperties":false}"#, writes: false,
+    },
+    ToolSpec {
+        name: "import_artifact", category: Category::Filesystem,
+        description: "Copy one explicitly shared browser download (up to 64 MiB) to a new file in an existing workspace directory. Always requires approval. Verifies SHA256, preserves original, refuses overwrites. No extraction or execution; binary recovery is not supported.",
+        arguments: "artifact_id, path",
+        schema: r#"{"type":"object","properties":{"artifact_id":{"type":"string"},"path":{"type":"string"}},"required":["artifact_id","path"],"additionalProperties":false}"#, writes: true,
+    },
     ToolSpec {name:"list_integrations",category:Category::Development,description:"List user-enabled MCP servers and granted tools, 32 per page. Supply server_id and tool for one complete granted schema. Does not start processes.",arguments:"server_id?, tool?, offset?",schema:r#"{"type":"object","properties":{"server_id":{"type":"string"},"tool":{"type":"string"},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#,writes:false},
     ToolSpec {name:"call_integration_tool",category:Category::Development,description:"Invoke a granted tool on a user-configured native MCP server. Requires approval every time; external programs retain OS account permissions. Never automatically retry uncertain results.",arguments:"server_id, tool, arguments",schema:r#"{"type":"object","properties":{"server_id":{"type":"string"},"tool":{"type":"string"},"arguments":{"type":"object"}},"required":["server_id","tool","arguments"],"additionalProperties":false}"#,writes:true},
     ToolSpec {

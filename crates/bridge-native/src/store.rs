@@ -238,6 +238,7 @@ impl Store {
             CREATE TABLE IF NOT EXISTS bridge_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS activity_results (activity_id INTEGER PRIMARY KEY REFERENCES activity(id), duration_ms INTEGER NOT NULL, result_json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS file_changes (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, session_id TEXT NOT NULL, download_id INTEGER NOT NULL, record TEXT NOT NULL, UNIQUE(workspace_id, session_id, download_id));
             "#,
         )?;
         let has_workspace: i64 = conn.query_row(
@@ -267,6 +268,21 @@ impl Store {
         conn.execute("INSERT INTO file_changes VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET record=excluded.record",
             params![record.id,record.workspace_id,record.created_at,serde_json::to_string(record)?])?;
         Ok(())
+    }
+
+    pub fn save_artifact(&self, artifact: &crate::tools::artifacts::Artifact) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute(
+            "INSERT INTO artifacts VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET record=excluded.record",
+            params![artifact.id, artifact.workspace_id, artifact.session_id, artifact.download_id, serde_json::to_string(artifact)?],
+        )?;
+        Ok(())
+    }
+
+    pub fn artifacts(&self, workspace: &str, session: &str) -> Result<Vec<crate::tools::artifacts::Artifact>> {
+        let conn = self.conn.lock().expect("store mutex");
+        let mut query = conn.prepare("SELECT record FROM artifacts WHERE workspace_id=?1 AND session_id=?2 ORDER BY rowid DESC LIMIT 100")?;
+        let rows = query.query_map(params![workspace, session], |row| row.get::<_, String>(0))?;
+        rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
     }
 
     pub fn file_change(

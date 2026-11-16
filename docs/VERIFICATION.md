@@ -1,8 +1,46 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest local patch checks used extension/native host **0.4.7**, protocol **4**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The most recent model-driven provider acceptance below remains **0.4.6**.
+These are recorded results, not a guarantee of every environment. The latest local checks used extension/native host **0.5.0**, protocol **5**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Kimi's new artifact-import loop was exercised on 0.5.0; the full provider acceptance matrix below remains historical.
 
 Raw transcripts, session IDs, conversation URLs, machine paths, audit exports, and build logs are retained locally and excluded from the public repository. This document summarizes those observations without publishing the chats.
+
+## Browser-file import 0.5.0 — November 16, 2026
+
+| Check | Recorded result |
+| --- | --- |
+| Workspace tests | 91 passed, 0 failed: 32 core, 2 extension metadata, 18 native unit, 6 artifact integration, 13 filesystem, 1 MCP subprocess, 8 Native Messaging, 9 workspace/command, 2 tooling |
+| Release packaging | WASM and native/tooling exit 0; source/package/generated manifest all 0.5.0; installed binary hash and exact native manifest verified |
+| Installed self-test | 41 passed, 0 failed, using a temporary workspace |
+| Loaded build | Chrome details, Kimi shadow panel, and fresh host hello all 0.5.0; protocol 5 |
+| Real browser file | Kimi generated `bridge-050-test.svg`; its visible Download control saved a 311-byte SVG in Chrome |
+| Explicit sharing | Extension controls selected that Chrome download and Kimi session; the host registered an opaque file ID and recorded the grant |
+| Denied import | Manual import request denied from the in-page panel; destination remained absent |
+| Model-driven import | Kimi called `list_artifacts`, then `import_artifact`; approval in the extension controls created `files/bridge-050-kimi.svg` in the general scratch workspace |
+| In-conversation verification | The real import result returned to Kimi; its following `read_file` returned the SVG contents and matching hash |
+| Source preservation | Download and workspace copy both remained present, byte-identical |
+| Final selector/revocation check | Rebuilt and reloaded after the UI fix; selected file displayed correctly, then changed to `revoked` after Revoke sharing |
+| Doctor after import/revocation | Configuration, manifest, binary, SQLite and audit passed; 362 matching database/audit-file entries |
+
+Both files were 311 bytes, with SHA-256:
+
+```text
+11d19bfa6721f67f8a00173ead6549853e158549f04601c01ed48a8eaf0e8728
+```
+
+Observed host lines, with private identifiers omitted:
+
+```text
+14:54:22.565Z extension hello (0.5.0)
+15:03:54.153Z artifact control result=ok
+15:05:01.508Z panel tool import_artifact error (approval denied)
+15:05:10.019Z tool list_artifacts for KIMI finished in 14ms (ok)
+15:05:34.175Z tool import_artifact for KIMI finished in 12188ms (ok)
+15:05:45.004Z tool read_file for KIMI finished in 1ms (ok)
+```
+
+The artifact regression suite exercises binary bytes above the existing text limit, explicit approval and denial, changed sources/inodes, source and destination symlinks, hard links, private-file exclusions, traversal, collisions, workspace locking during approval, revoked and expired grants, cross-session/workspace isolation, interrupted receipts after restart, research protections and duplicate import refusal. A Native Messaging test also imports real binary bytes through the compiled host's framed protocol.
+
+This proves the specified Kimi download/import flow. It does not establish automatic provider-artifact discovery, uploads, large-binary recovery, archive extraction, media understanding, other providers' download flows, or physical Intel Mac compatibility. Kimi briefly reported its existing message-ID selector warning while the final answer was streaming; the import and read results still reached the conversation. The final UI-only follow-up was rebuilt, reloaded and checked for correct selection/revocation display; the native binary hash remained unchanged.
 
 ## Patch 0.4.7 — November 16, 2026
 

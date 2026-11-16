@@ -145,6 +145,7 @@ fn bridge_ui(wide: bool) -> impl IntoView {
 
             <WorkspaceControls status=status error=error/>
             <CommandControls status=status error=error/>
+            <ArtifactControls status=status error=error/>
             <ToolWorkbench status=status error=error/>
             <IntegrationControls status=status error=error/>
 
@@ -356,6 +357,99 @@ fn IntegrationControls(
                     </details>}
                 }).collect_view()}
                 <div>{move||notice.get()}</div>
+            </div>
+        </details>
+    }
+}
+
+#[component]
+fn ArtifactControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -> impl IntoView {
+    let session = RwSignal::new(String::new());
+    let download = RwSignal::new(String::new());
+    let downloads = RwSignal::new(Vec::<serde_json::Value>::new());
+    let shared = RwSignal::new(Vec::<serde_json::Value>::new());
+    let selected = RwSignal::new(String::new());
+    let path = RwSignal::new(String::new());
+    let result = RwSignal::new(serde_json::Value::Null);
+    let busy = RwSignal::new(false);
+    let displayed_scope = RwSignal::new(String::new());
+    Effect::new(move |_| {
+        let scope=format!("{}:{}",status.get().active_id,session.get());
+        if scope != displayed_scope.get_untracked() {
+            displayed_scope.set(scope); shared.set(Vec::new()); selected.set(String::new()); path.set(String::new()); result.set(serde_json::Value::Null);
+        }
+    });
+    let action = move |op: &'static str| {
+        let current=status.get_untracked(); let sid=session.get_untracked();
+        if op!="browser_downloads" && !current.sessions.iter().any(|s|s.id==sid) {
+            error.set(Some("Choose a connected conversation to share this file with.".into())); return;
+        }
+        let workspace=current.active_id;
+        let request=match op {
+            "browser_downloads"=>json!({"op":op}),
+            "share_download"=>{
+                let Ok(id)=download.get_untracked().parse::<i32>() else {error.set(Some("Select a completed download first.".into()));return;};
+                json!({"op":op,"download_id":id,"workspace_id":workspace,"session_id":sid})
+            },
+            "revoke_artifact"=>json!({"op":op,"artifact_id":selected.get_untracked(),"workspace_id":workspace,"session_id":sid}),
+            _=>json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":op,"arguments":if op=="import_artifact"{json!({"artifact_id":selected.get_untracked(),"path":path.get_untracked()})}else{json!({})}}),
+        };
+        busy.set(true); error.set(None);
+        spawn_local(async move {
+            match workspace_request(request).await {
+                Ok(value)=>{
+                    if op=="browser_downloads" {
+                        downloads.set(value["downloads"].as_array().cloned().unwrap_or_default()); download.set(String::new());
+                    } else if status.get_untracked().active_id==workspace && session.get_untracked()==sid {
+                        if value["status"]=="error" {error.set(Some(value["error"].as_str().unwrap_or("File operation failed").into()));}
+                        if op=="share_download" {selected.set(value["artifact_id"].as_str().unwrap_or_default().into());}
+                        result.set(value);
+                        match workspace_request(json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":"list_artifacts","arguments":{}})).await {
+                            Ok(list) if status.get_untracked().active_id==workspace && session.get_untracked()==sid=>{
+                                if list["status"]=="ok" {shared.set(list["data"]["artifacts"].as_array().cloned().unwrap_or_default());}
+                                else {error.set(Some(list["error"].as_str().unwrap_or("Could not load shared files").into()));}
+                            },
+                            Err(err)=>error.set(Some(err)), _=>{},
+                        }
+                    }
+                }, Err(err)=>error.set(Some(err)),
+            }
+            busy.set(false); refresh(status,error);
+        });
+    };
+    view! {
+        <details style="border:1px solid #304451;padding:8px;margin-bottom:10px">
+            <summary>"Browser files → workspace"</summary>
+            <div style="display:grid;gap:6px;margin-top:8px">
+                <div>"Download from the chat first, then select the file here. Only your selected file is shared. Images, PDFs, office files, ZIPs and media keep their original bytes."</div>
+                <div style="color:#8ea2b1">"Up to 64 MiB · completed safe downloads only · approval for every import · no overwrites, extraction or binary undo."</div>
+                <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|action("browser_downloads")>"Refresh browser downloads"</button>
+                <select aria-label="Browser download" style=CONTROL_STYLE prop:value=move||download.get() on:change=move|ev|download.set(event_target_value(&ev))>
+                    <option value="">"Choose a downloaded file…"</option>
+                    {move||downloads.get().into_iter().map(|d|view!{<option value=d["download_id"].to_string()>{format!("{} · {} bytes · {}",d["name"].as_str().unwrap_or("file"),d["bytes"],d["origin"].as_str().unwrap_or_default())}</option>}).collect_view()}
+                </select>
+                <select aria-label="File sharing session" style=CONTROL_STYLE prop:value=move||session.get() on:change=move|ev|session.set(event_target_value(&ev))>
+                    <option value="">"Choose a conversation…"</option>
+                    {move||status.get().sessions.into_iter().map(|s|view!{<option value=s.id>{format!("{} · tab {} · {}",s.agent,s.tab_id,s.conversation.unwrap_or_default())}</option>}).collect_view()}
+                </select>
+                <button style=CONTROL_STYLE disabled=move||busy.get()||download.get().is_empty()||session.get().is_empty() on:click=move |_|action("share_download")>"Share selected file with this session"</button>
+                <div>"Sharing lasts 24 hours. The model can find the file with list_artifacts; sharing does not send a chat message."</div>
+                <button style=CONTROL_STYLE disabled=move||busy.get()||session.get().is_empty() on:click=move |_|action("list_artifacts")>"Refresh shared files"</button>
+                <select aria-label="Shared file" style=CONTROL_STYLE prop:value=move||selected.get() on:change=move|ev|selected.set(event_target_value(&ev))>
+                    <option value="">"Choose a shared file…"</option>
+                    {move||shared.get().into_iter().map(|a|{
+                        let id=a["artifact_id"].as_str().unwrap_or_default().to_string();let selected_id=id.clone();
+                        view!{<option value=id prop:selected=move||selected.get()==selected_id>{format!("{} · {} · {} bytes",a["name"].as_str().unwrap_or("file"),a["state"].as_str().unwrap_or_default(),a["bytes"])}</option>}
+                    }).collect_view()}
+                </select>
+                <pre style="white-space:pre-wrap;word-break:break-all;font-size:10px">{move||shared.get().into_iter().find(|a|a["artifact_id"]==selected.get()).map(|a|format!("ID: {}\nType: {}\nSHA256: {}\nDestination: {}",a["artifact_id"].as_str().unwrap_or_default(),a["mime"].as_str().unwrap_or_default(),a["sha256"].as_str().unwrap_or_default(),a["destination"].as_str().unwrap_or("not imported"))).unwrap_or_default()}</pre>
+                <input aria-label="Import destination" style=CONTROL_STYLE placeholder="files/generated-image.png (existing folder)" prop:value=move||path.get() on:input=move|ev|path.set(event_target_value(&ev))/>
+                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||path.get().trim().is_empty()||!shared.get().iter().any(|a|a["artifact_id"]==selected.get()&&a["state"]=="selected") on:click=move |_|action("import_artifact")>"Request import"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||!shared.get().iter().any(|a|a["artifact_id"]==selected.get()&&a["state"]=="selected") on:click=move |_|action("revoke_artifact")>"Revoke sharing"</button>
+                </div>
+                <div>{move||if busy.get(){"Working; check pending approvals below."}else{"The original download stays in place. Imported files are never opened or run automatically."}}</div>
+                <pre style="white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;font-size:10px">{move||if result.get().is_null(){String::new()}else{serde_json::to_string_pretty(&result.get()).unwrap_or_default()}}</pre>
             </div>
         </details>
     }

@@ -184,6 +184,9 @@ enum BgRequest {
         arguments: Value,
     },
     CommandPresets,
+    BrowserDownloads,
+    ShareDownload { download_id: i32, workspace_id: String, session_id: String },
+    RevokeArtifact { artifact_id: String, workspace_id: String, session_id: String },
     IntegrationList,
     IntegrationSave {
         server: Value,
@@ -588,6 +591,29 @@ fn handle_message(
                 }
             });
         }
+        request @ (BgRequest::BrowserDownloads | BgRequest::ShareDownload { .. }) => {
+            if !extension_control(&sender) {
+                js::respond(&respond_fn, &json!({"ok":false,"error":"Files must be explicitly selected in the extension controls."}));
+                return;
+            }
+            spawn_local(async move {
+                match request {
+                    BgRequest::BrowserDownloads => {
+                        match crate::artifacts::list().await {
+                            Ok(result) => js::respond(&respond_fn, &json!({"ok":true,"result":result})),
+                            Err(error) => js::respond(&respond_fn, &json!({"ok":false,"error":error})),
+                        }
+                    },
+                    BgRequest::ShareDownload { download_id, workspace_id, session_id } => {
+                        match crate::artifacts::selected(download_id).await {
+                            Ok(download) => send_panel_control(state, respond_fn, json!({"type":"register_artifact","workspace_id":workspace_id,"session_id":session_id,"download":download})),
+                            Err(error) => js::respond(&respond_fn, &json!({"ok":false,"error":error})),
+                        }
+                    },
+                    _ => unreachable!(),
+                }
+            });
+        }
         request @ (BgRequest::WorkspaceList
         | BgRequest::WorkspaceCreate { .. }
         | BgRequest::WorkspaceSelect { .. }
@@ -602,23 +628,20 @@ fn handle_message(
         | BgRequest::ActivityDetail { .. }
         | BgRequest::RunTool { .. }
         | BgRequest::CommandPresets
+        | BgRequest::RevokeArtifact { .. }
         | BgRequest::IntegrationList
         | BgRequest::IntegrationSave { .. }
         | BgRequest::IntegrationRemove { .. }
         | BgRequest::IntegrationDiscover { .. }) => {
-            let source = js_sys::Reflect::get(&sender, &JsValue::from_str("url"))
-                .ok()
-                .and_then(|value| value.as_string())
-                .unwrap_or_default();
-            if !source.starts_with(&js::extension_url("")) {
+            if !extension_control(&sender) {
                 js::respond(
                     &respond_fn,
                     &json!({"ok":false,"error":"Workspace and command grants require the extension controls."}),
                 );
                 return;
             }
-            let key = format!("panel-{:016x}", js::random_u64());
-            let mut message = match request {
+            let message = match request {
+                BgRequest::RevokeArtifact { artifact_id, workspace_id, session_id } => json!({"type":"revoke_artifact","artifact_id":artifact_id,"workspace_id":workspace_id,"session_id":session_id}),
                 BgRequest::WorkspaceList => json!({"type":"list_workspaces"}),
                 BgRequest::WorkspaceCreate {
                     label,
@@ -674,26 +697,29 @@ fn handle_message(
                 }
                 _ => unreachable!(),
             };
-            message["request_key"] = key.clone().into();
-            state
-                .borrow_mut()
-                .pending_controls
-                .insert(key.clone(), respond_fn.clone());
-            if let Err(err) = send_native(&state, message) {
-                state.borrow_mut().pending_controls.remove(&key);
-                js::respond(&respond_fn, &json!({"ok":false,"error":err}));
-            }
-            let timeout_state = state.clone();
-            js::schedule(245_000, move || {
-                if let Some(respond) = timeout_state.borrow_mut().pending_controls.remove(&key) {
-                    js::respond(
-                        &respond,
-                        &json!({"ok":false,"code":"request_timeout","error":"Operation timed out. Inspect activity and files before retrying a mutation."}),
-                    );
-                }
-            });
+            send_panel_control(state, respond_fn, message);
         }
     }
+}
+
+fn extension_control(sender: &JsValue) -> bool {
+    js_sys::Reflect::get(sender, &JsValue::from_str("url")).ok()
+        .and_then(|value|value.as_string()).is_some_and(|url|url.starts_with(&js::extension_url("")))
+}
+
+fn send_panel_control(state: Rc<RefCell<BgState>>, respond_fn: js_sys::Function, mut message: Value) {
+    let key = format!("panel-{:016x}", js::random_u64());
+    message["request_key"] = key.clone().into();
+    state.borrow_mut().pending_controls.insert(key.clone(), respond_fn.clone());
+    if let Err(err) = send_native(&state, message) {
+        state.borrow_mut().pending_controls.remove(&key);
+        js::respond(&respond_fn, &json!({"ok":false,"error":err}));
+    }
+    js::schedule(245_000, move || {
+        if let Some(respond) = state.borrow_mut().pending_controls.remove(&key) {
+            js::respond(&respond, &json!({"ok":false,"code":"request_timeout","error":"Operation timed out. Inspect activity and files before retrying a mutation."}));
+        }
+    });
 }
 
 fn send_native(state: &Rc<RefCell<BgState>>, message: Value) -> Result<(), String> {
