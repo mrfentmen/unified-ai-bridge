@@ -312,6 +312,23 @@ async fn crashed_receipt_is_reconciled_without_rerun() {
     .await);
     let id = job["job_id"].as_str().unwrap();
     terminal(&app, &sid, id).await;
+    // The terminal receipt is written before the worker finishes its audit
+    // and releases its lifetime lock. Wait for that actual boundary before
+    // simulating an abandoned receipt; a slower Intel runner can still own it.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let guard = loop {
+        if let Ok(guard) = bridge_native::fsops::PathLock::acquire(
+            &app.home.base.join("locks"),
+            &format!("job-worker:{id}"),
+        ) {
+            break guard;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "completed worker did not release its lock"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
     app.store
         .update_job(id, |j| {
             j.state = "running".into();
@@ -320,6 +337,12 @@ async fn crashed_receipt_is_reconciled_without_rerun() {
             Ok(())
         })
         .unwrap();
+    assert_eq!(
+        ok(call(&app, &sid, "job_status", json!({"job_id":id})).await)["state"],
+        "running",
+        "a stale heartbeat with a live lock owner must not be called interrupted"
+    );
+    drop(guard);
     assert_eq!(
         ok(call(&app, &sid, "job_status", json!({"job_id":id})).await)["state"],
         "interrupted"

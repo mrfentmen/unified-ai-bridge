@@ -142,6 +142,7 @@ pub enum ExtToHost {
     IntegrationList {
         request_key: String,
     },
+    IntegrationStatus {request_key:String,server_id:String},
     IntegrationSave {
         request_key: String,
         server: crate::integrations::ServerConfig,

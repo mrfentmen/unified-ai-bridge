@@ -2,6 +2,22 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## MCP lifecycle candidate 0.5.14 — November 16, 2026
+
+The source and isolated package are 0.5.14. Normal Chrome files/native installation remain 0.5.7; no new browser acceptance is claimed.
+
+| Check | Observed result |
+|---|---|
+| Four integration tests | Actual bridge RMCP discovery/read and denial checks; separate native lifecycle fixture verifies removal during initialization/discovery, running-call removal/lock/timeout, inherited child-process cleanup and no-start readiness |
+| Workspace suite | 174 passed, 0 failed; one long-duration test omitted from routine runs and separately passed on 0.5.10. The corrected lifetime-lock test passed |
+| Isolated package | WASM/native/tooling release builds exited 0; source/package/manifest/native versions all 0.5.14 |
+| Packaged Native Messaging → RMCP | Registered the isolated actual bridge executable, discovered/granted read_file, denied one request, read copied docs/GIT.md over two separate connections, then removed the grant and refused the next request |
+| Installed checks | 41 self-tests passed; doctor passed config/binary/manifest/SQLite and 21 matching audit entries |
+| Intel CI finding | 0.5.12 run 43942537947 passed Linux but failed crashed_receipt_is_reconciled_without_rerun on Intel. The test rewrote a terminal receipt while the exiting worker still held its lifetime lock. It now waits for lock release, verifies a stale heartbeat remains running while a lock is owned, then verifies interruption after release. No recovery invariant was weakened; Intel confirmation is pending |
+| Browser | Readiness/removal controls compiled; live UI acceptance remains pending |
+
+Installed native SHA-256: `bad329bdf5463ef575f800721f9fb915e070a786b5afe5a3cd33931b2a38259e`. Raw outputs are in ignored `docs/evidence/0.5.14/`. The delay/process test fixture is not presented as a third-party application or provider integration. [Semantics and remaining work](INTEGRATIONS.md).
+
 ## DOCX body-text candidate 0.5.13 — November 16, 2026
 
 The source and isolated package are 0.5.13. Normal Chrome files/native installation remain 0.5.7; the new browser controls remain unverified.

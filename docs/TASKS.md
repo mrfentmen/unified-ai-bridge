@@ -30,6 +30,8 @@ The 0.5.13 candidate implements a DOCX body-text subset of UAB-16 in an isolated
 
 ## 1. Make unattended work dependable
 
+The 0.5.14 candidate strengthens UAB-24: no-start integration readiness, grant/lock checks through initialization/discovery/execution, and process-group cleanup on completion/error/timeout/removal. The actual bridge RMCP server returned source content through two separate packaged connections; lifecycle fault tests use an explicitly labeled native test server. Persistent application sessions, rich progress/results, image handoff and browser acceptance remain open. It also fixes a test synchronization bug found by Intel CI in the abandoned-job-receipt check, preserving the recovery lock invariant. See [integrations](INTEGRATIONS.md).
+
 Start here. The current configuration permits 16 calls per task, 4 per assistant response, 180 seconds for an approval, and 240 seconds for a tool call. These are current limits, not recommended overnight defaults. The installed host has an ad-hoc linker signature; stable signing and permission persistence still need implementation and verification.
 
 - [ ] **UAB-01 — Stable host installation and macOS permissions.** Establish a consistent signing identity and installation path; document the one-time Files & Folders/Accessibility/Automation grants actually needed. Keep credentials out of the repository. Do not rebuild or reload the host during an active job. **Done when:** two consecutive updates retain the intended identity, required file access works without recurring prompts in a real Chrome session, and any remaining authentication requirement is named. Do not promise unattended permission dialogs or lock-screen access.

@@ -211,6 +211,7 @@ enum BgRequest {
         session_id: String,
     },
     IntegrationList,
+    IntegrationStatus {server_id:String},
     IntegrationSave {
         server: Value,
     },
@@ -691,6 +692,7 @@ fn handle_message(
         | BgRequest::CommandPresets
         | BgRequest::RevokeArtifact { .. }
         | BgRequest::IntegrationList
+        | BgRequest::IntegrationStatus { .. }
         | BgRequest::IntegrationSave { .. }
         | BgRequest::IntegrationRemove { .. }
         | BgRequest::IntegrationDiscover { .. }) => {
@@ -770,6 +772,7 @@ fn handle_message(
                 }
                 BgRequest::CommandPresets => json!({"type":"command_presets"}),
                 BgRequest::IntegrationList => json!({"type":"integration_list"}),
+                BgRequest::IntegrationStatus{server_id}=>json!({"type":"integration_status","server_id":server_id}),
                 BgRequest::IntegrationSave { server } => {
                     json!({"type":"integration_save","server":server})
                 }

@@ -827,6 +827,9 @@ pub async fn run() -> Result<()> {
                 )
                 .await;
             }
+            ExtToHost::IntegrationStatus{request_key,server_id}=>{
+                send_control(&tx,request_key,crate::integrations::health(&app,&server_id).map_err(anyhow::Error::from)).await;
+            }
             ExtToHost::IntegrationSave {
                 request_key,
                 server,

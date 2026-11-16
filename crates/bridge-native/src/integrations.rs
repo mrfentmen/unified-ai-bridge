@@ -131,10 +131,72 @@ fn configured<'a>(app: &'a App, id: &str) -> Result<&'a ServerConfig, ToolFailur
 fn failure(error: impl std::fmt::Display) -> ToolFailure {
     ToolFailure::Io(error.to_string())
 }
-async fn connect(
-    app: &App,
-    config: &ServerConfig,
-) -> Result<RunningService<RoleClient, ()>, ToolFailure> {
+struct ProcessGroup(Option<u32>);
+impl ProcessGroup {
+    fn stop(&mut self) {
+        if let Some(pid) = self.0.take() {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+    }
+}
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+struct McpClient {
+    // Dropped first, including initialization/discovery/validation error paths.
+    group: ProcessGroup,
+    service: RunningService<RoleClient, ()>,
+}
+impl McpClient {
+    async fn stop(mut self) {
+        self.group.stop();
+        let _ = self
+            .service
+            .close_with_timeout(Duration::from_secs(2))
+            .await;
+    }
+}
+fn current_grant(app: &App, config: &ServerConfig) -> Result<(), ToolFailure> {
+    let current = app.home.load_config().map_err(failure)?;
+    let current = current
+        .workspace_integrations
+        .get(&app.workspace.id())
+        .and_then(|items| items.iter().find(|s| s.id == config.id));
+    if current.map(|s| serde_json::to_string(s).unwrap_or_default())
+        != Some(serde_json::to_string(config).map_err(failure)?)
+    {
+        return Err(ToolFailure::PermissionDenied(
+            "integration grant changed or was removed".into(),
+        ));
+    }
+    if app
+        .store
+        .workspaces()
+        .map_err(failure)?
+        .iter()
+        .find(|w| w.id == app.workspace.id())
+        .is_none_or(|w| w.read_only)
+    {
+        return Err(ToolFailure::PermissionDenied(
+            "workspace is locked or no longer granted".into(),
+        ));
+    }
+    Ok(())
+}
+async fn revoked(app: &App, config: &ServerConfig) -> ToolFailure {
+    loop {
+        if let Err(error) = current_grant(app, config) {
+            return error;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+async fn connect(app: &App, config: &ServerConfig) -> Result<McpClient, ToolFailure> {
+    current_grant(app, config)?;
     config
         .validate()
         .map_err(|e| ToolFailure::PermissionDenied(e.to_string()))?;
@@ -145,15 +207,17 @@ async fn connect(
         .env_clear()
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .stderr(Stdio::null())
-        .kill_on_drop(true);
+        .kill_on_drop(true)
+        .process_group(0);
     if let Some(home) = std::env::var_os("HOME") {
         command.env("HOME", home);
     }
     let transport = TokioChildProcess::new(command).map_err(failure)?;
-    tokio::time::timeout(Duration::from_secs(10), ().serve(transport))
-        .await
-        .map_err(|_| failure("MCP initialization timed out"))?
-        .map_err(failure)
+    let group = ProcessGroup(transport.id());
+    let service = tokio::select! {result=tokio::time::timeout(Duration::from_secs(10), ().serve(transport))=>result
+    .map_err(|_| failure("MCP initialization timed out"))?
+    .map_err(failure)?,error=revoked(app,config)=>return Err(error)};
+    Ok(McpClient { group, service })
 }
 async fn definitions(
     client: &RunningService<RoleClient, ()>,
@@ -173,12 +237,38 @@ async fn definitions(
 pub async fn discover(app: &App, id: &str) -> Result<Value, ToolFailure> {
     let config = configured(app, id)?;
     let client = connect(app, config).await?;
-    let definitions = definitions(&client).await?;
+    let definitions = tokio::select! {result=definitions(&client.service)=>result?,error=revoked(app,config)=>return Err(error)};
     let tools:Vec<Value>=definitions.into_iter().map(|tool|{let schema=serde_json::to_value(&tool.input_schema).unwrap_or_default();json!({"name":tool.name,"description":tool.description,"schema":schema,"schema_sha256":crate::fsops::sha256_bytes(schema.to_string().as_bytes())})}).collect();
-    let _ = client.cancel().await;
+    client.stop().await;
     Ok(
         json!({"server_id":id,"state":"discovered","tools":tools,"authority":"Runs with your OS account permissions; bridge folder restrictions do not sandbox the server."}),
     )
+}
+pub fn health(app: &App, id: &str) -> Result<Value, ToolFailure> {
+    let config = configured(app, id)?;
+    let result = current_grant(app, config).and_then(|_| {
+        config
+            .validate()
+            .map_err(|e| ToolFailure::PermissionDenied(e.to_string()))
+    });
+    Ok(
+        json!({"server_id":id,"state":if result.is_ok(){"configured_unprobed"}else{"blocked"},"reason":result.err().map(|e|e.to_string()),"granted_tools":config.tools.len(),"timeout_secs":config.timeout_secs,"process_started":false,"connected":null,"note":"This checks the current grant and executable hash, not server responsiveness. Each discovery/call starts a separate process; discovery never grants tools. In-flight revocation/lock checks run every 250 ms and cannot undo completed external effects."}),
+    )
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Health {
+    server_id: String,
+}
+pub async fn status(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, ToolFailure> {
+    let args: Health = parse_args(args)?;
+    let data = health(ctx.app, &args.server_id)?;
+    Ok(ToolOutcome::read(
+        "Integration readiness (no process started)",
+        data.to_string(),
+        None,
+    )
+    .with_data(data))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -275,35 +365,16 @@ pub async fn call(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, Too
     let arguments = args.arguments.as_object().cloned().ok_or_else(|| {
         ToolFailure::InvalidArguments("integration arguments must be an object".into())
     })?;
+    if serde_json::to_vec(&args.arguments).map_err(failure)?.len() > 32000 {
+        return Err(ToolFailure::InvalidArguments(
+            "integration arguments exceed 32,000 bytes".into(),
+        ));
+    }
     // All external calls ask; upstream readOnly annotations do not confer authority.
     ctx.app.request_approval(ctx.session_id,ctx.agent,"call_integration_tool",&format!("Run external MCP tool {}/{} with {}. This native program has your OS account permissions and is not confined to the workspace.",args.server_id,args.tool,args.arguments),None).await?;
-    let current = ctx.app.home.load_config().map_err(failure)?;
-    let current = current
-        .workspace_integrations
-        .get(&ctx.app.workspace.id())
-        .and_then(|items| items.iter().find(|s| s.id == config.id));
-    if current.map(|s| serde_json::to_string(s).unwrap_or_default())
-        != Some(serde_json::to_string(config).map_err(failure)?)
-    {
-        return Err(ToolFailure::PermissionDenied(
-            "integration grant changed while waiting for approval".into(),
-        ));
-    }
-    if ctx
-        .app
-        .store
-        .workspaces()
-        .map_err(failure)?
-        .iter()
-        .find(|w| w.id == ctx.app.workspace.id())
-        .is_none_or(|w| w.read_only)
-    {
-        return Err(ToolFailure::PermissionDenied(
-            "workspace is locked or no longer granted".into(),
-        ));
-    }
+    current_grant(ctx.app, config)?;
     let client = connect(ctx.app, config).await?;
-    let definitions = definitions(&client).await?;
+    let definitions = tokio::select! {result=definitions(&client.service)=>result?,error=revoked(ctx.app,config)=>return Err(error)};
     let definition = definitions
         .iter()
         .find(|t| t.name.as_ref() == args.tool)
@@ -319,16 +390,14 @@ pub async fn call(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, Too
     validator
         .validate(&args.arguments)
         .map_err(|e| ToolFailure::InvalidArguments(e.to_string()))?;
+    current_grant(ctx.app, config)?;
     let request = CallToolRequestParams::new(args.tool.clone()).with_arguments(arguments);
-    let result = tokio::time::timeout(
-        Duration::from_secs(config.timeout_secs),
-        client.call_tool(request),
-    )
-    .await;
-    let _ = client.cancel().await;
-    let result = result
-        .map_err(|_| failure("MCP call timed out; outcome may be uncertain. It was not retried."))?
-        .map_err(failure)?;
+    let result = tokio::select! {
+        result=tokio::time::timeout(Duration::from_secs(config.timeout_secs),client.service.call_tool(request))=>result.map_err(|_|failure("MCP call timed out; outcome may be uncertain. It was not retried.")).and_then(|r|r.map_err(failure)),
+        error=revoked(ctx.app,config)=>Err(ToolFailure::PermissionDenied(format!("{error}; external process stopped. The operation may already have changed files; outcome is uncertain and was not retried.")))
+    };
+    client.stop().await;
+    let result = result?;
     let serialized = serde_json::to_string(&result).map_err(failure)?;
     if serialized.len() > 50_000 {
         return Err(ToolFailure::Unsupported("MCP result exceeds 50 KB; operation may have completed. Narrow its output before making a new request.".into()));

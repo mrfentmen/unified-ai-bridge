@@ -538,6 +538,7 @@ pub async fn dispatch(
         "read_table" => tables::read(&context, arguments).await,
         "query_table" => tables::query(&context, arguments).await,
         "document_info" => documents::info(&context, arguments).await,
+        "integration_status" => crate::integrations::status(&context,arguments).await,
         "extract_document_text" => documents::extract(&context, arguments).await,
         "git_diff" => development::git_diff(&context, arguments).await,
         "inspect_repository" => development::inspect_repository(&context, arguments).await,
@@ -567,6 +568,7 @@ pub async fn dispatch(
                     | "read_table"
                     | "query_table"
                     | "document_info"
+                    | "integration_status"
                     | "extract_document_text"
                     | "git_commit_status"
                     | "git_diff"

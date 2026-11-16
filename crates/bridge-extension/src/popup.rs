@@ -343,11 +343,12 @@ fn IntegrationControls(
                     spawn_local(async move{match workspace_request(json!({"op":"integration_save","server":server})).await{Ok(_)=>{notice.set("Registered with no tools enabled. Discover and review tools next.".into());reload();},Err(err)=>error.set(Some(err))};busy.set(false);});
                 }>"Register server (no tools enabled)"</button>
                 {move||servers.get().into_iter().map(|server|{
-                    let server_id=server["id"].as_str().unwrap_or_default().to_string();let remove_id=server_id.clone();
+                    let server_id=server["id"].as_str().unwrap_or_default().to_string();let remove_id=server_id.clone();let health_id=server_id.clone();
                     view!{<div style="border-top:1px solid #304451;padding-top:6px">
                         <div>{format!("{} · {} · {} tools enabled",server_id,server["program"],server["tools"].as_array().map_or(0,Vec::len))}</div>
+                        <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{let id=health_id.clone();busy.set(true);spawn_local(async move{match workspace_request(json!({"op":"integration_status","server_id":id})).await{Ok(value)=>notice.set(value.to_string()),Err(err)=>error.set(Some(err))};busy.set(false);});}>"Check grant and executable"</button>
                         <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{let id=server_id.clone();busy.set(true);spawn_local(async move{match workspace_request(json!({"op":"integration_discover","server_id":id})).await{Ok(value)=>{discovery.set(value);notice.set("Discovery succeeded. Select tools to grant; nothing is enabled automatically.".into());},Err(err)=>error.set(Some(err))};busy.set(false);});}>"Start and discover tools"</button>
-                        <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{let id=remove_id.clone();spawn_local(async move{match workspace_request(json!({"op":"integration_remove","server_id":id})).await{Ok(_)=>{reload();discovery.set(serde_json::Value::Null);},Err(err)=>error.set(Some(err))}});}>"Remove integration"</button>
+                        <button style=CONTROL_STYLE on:click=move |_|{let id=remove_id.clone();spawn_local(async move{match workspace_request(json!({"op":"integration_remove","server_id":id})).await{Ok(_)=>{reload();discovery.set(serde_json::Value::Null);notice.set("Grant removed. Active calls stop at the next check; completed external effects are not undone.".into());},Err(err)=>error.set(Some(err))}});}>"Remove grant / stop integration"</button>
                     </div>}
                 }).collect_view()}
                 {move||discovery.get()["tools"].as_array().cloned().unwrap_or_default().into_iter().map(|tool|{

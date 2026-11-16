@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.13 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.14 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -30,7 +30,7 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **Use your own project commands.** Grant a specific executable, arguments, working directory, timeout, and output limit. The chat selects an allowed command; it cannot invent a shell command.
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.
-- **Connect reviewed native MCP tools.** Register a local native executable, discover its tools, and explicitly grant access. Each external tool call requires approval.
+- **Connect reviewed native MCP tools.** Register a local native executable, discover its tools, and explicitly grant access. Each call requires approval. The 0.5.14 candidate adds readiness checks and stops active process groups when grants are removed or the workspace locks. [Integration limits](docs/INTEGRATIONS.md).
 - **Run bounded background work.** Approved commands can keep running through a browser reconnect. Inspect saved output, stop jobs, and grant a selected session time-limited file writes with budgets. See [overnight controls](docs/OVERNIGHT.md).
 - **Inspect the desktop.** Capture screenshots to files, list open applications, and inspect accessible windows, subject to macOS permissions. Mouse and keyboard control are still planned.
 
