@@ -512,6 +512,11 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let zip_destination = RwSignal::new(String::new());
     let zip_files = RwSignal::new("[]".to_string());
     let zip_hash = RwSignal::new(String::new());
+    let code_path=RwSignal::new(String::new());
+    let code_query=RwSignal::new(String::new());
+    let code_cursor=RwSignal::new(serde_json::Value::Null);
+    let symbol_offset=RwSignal::new(None::<u64>);
+    let symbol_hash=RwSignal::new(String::new());
     let binary_source = RwSignal::new(String::new());
     let binary_destination = RwSignal::new(String::new());
     let binary_source_hash = RwSignal::new(String::new());
@@ -536,6 +541,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             patch_session.set(String::new());
             zip_hash.set(String::new());
             image_hash.set(String::new());
+            code_cursor.set(serde_json::Value::Null);symbol_offset.set(None);symbol_hash.set(String::new());
             binary_source_hash.set(String::new());
             binary_expected.set(String::new());
             expected.set(None);
@@ -584,6 +590,8 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     if value["status"]=="ok" && name=="image_info" && args["path"].as_str()==Some(image_path.get_untracked().as_str()) {
                         image_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());
                     }
+                    if value["status"]=="ok" && name=="search_files"{code_cursor.set(value["data"]["next_cursor"].clone());}
+                    if value["status"]=="ok" && name=="list_symbols"{symbol_offset.set(value["data"]["next_offset"].as_u64());symbol_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());}
                     if value["status"]=="ok" && name=="calculate_sha256" {
                         let hash=value["data"]["sha256"].as_str().unwrap_or_default().to_string();
                         if args["path"].as_str()==Some(binary_source.get_untracked().as_str()){binary_source_hash.set(hash.clone());}
@@ -602,7 +610,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
         <details style="border:1px solid #304451;padding:8px;margin-bottom:10px">
             <summary>"Files, preview and restore"</summary>
             <div style="display:grid;gap:6px;margin-top:8px">
-                <label>"Use session permissions "<select style=CONTROL_STYLE on:change=move|ev|{session.set(event_target_value(&ev));preview_target.set(String::new());patch_preview_json.set(String::new());}>
+                <label>"Use session permissions "<select style=CONTROL_STYLE on:change=move|ev|{session.set(event_target_value(&ev));preview_target.set(String::new());patch_preview_json.set(String::new());code_cursor.set(serde_json::Value::Null);symbol_offset.set(None);symbol_hash.set(String::new());}>
                     <option value="">"First connected session"</option>
                     {move||status.get().sessions.into_iter().map(|s|view!{<option value=s.id>{format!("{} · tab {}",s.agent,s.tab_id)}</option>}).collect_view()}
                 </select></label>
@@ -642,6 +650,28 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <textarea aria-label="Archive source paths JSON" style=CONTROL_STYLE rows="3" placeholder="[\"files/main.rs\",\"notes/readme.md\"]" prop:value=move||zip_files.get() on:input=move|ev|zip_files.set(event_target_value(&ev))></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||zip_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&zip_files.get()){Ok(paths)=>execute("create_archive".into(),json!({"paths":paths,"destination":zip_destination.get()})),Err(err)=>error.set(Some(format!("Invalid file list JSON: {err}")))}}>"Request ZIP creation"</button>
                 </details>
+                <details><summary>"Code navigation"</summary>
+                    <p>"Search a folder for literal matches, or list syntax declarations in one Rust file. Other languages use text search. These are reference candidates, not semantic rename results."</p>
+                    <input aria-label="Code path" style=CONTROL_STYLE placeholder="src (search) or src/main.rs (symbols)" prop:value=move||code_path.get() on:input=move|ev|{code_path.set(event_target_value(&ev));code_cursor.set(serde_json::Value::Null);symbol_offset.set(None);symbol_hash.set(String::new());}/>
+                    <input aria-label="Code search query" style=CONTROL_STYLE prop:value=move||code_query.get() on:input=move|ev|{code_query.set(event_target_value(&ev));code_cursor.set(serde_json::Value::Null);}/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||code_query.get().is_empty() on:click=move |_|{code_cursor.set(serde_json::Value::Null);execute("search_files".into(),json!({"path":code_path.get(),"query":code_query.get(),"max_results":30}));}>"Search code text"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||code_cursor.get().is_null() on:click=move |_|execute("search_files".into(),json!({"path":code_path.get(),"query":code_query.get(),"cursor":code_cursor.get(),"max_results":30}))>"Next search page"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||code_path.get().is_empty() on:click=move |_|{symbol_offset.set(None);execute("list_symbols".into(),json!({"path":code_path.get(),"max_results":50}));}>"List Rust declarations"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||symbol_offset.get().is_none() on:click=move |_|execute("list_symbols".into(),json!({"path":code_path.get(),"max_results":50,"offset":symbol_offset.get(),"expected_sha256":symbol_hash.get()}))>"Next symbol page"</button>
+                </details>
+                {move||{
+                    let value=result.get();
+                    let mut entries=value["data"]["matches"].as_array().cloned().unwrap_or_default();
+                    entries.extend(value["data"]["symbols"].as_array().cloned().unwrap_or_default());
+                    for diag in value["data"]["diagnostics"]["diagnostics"].as_array().into_iter().flatten(){
+                        for loc in diag["locations"].as_array().into_iter().flatten(){let mut loc=loc.clone();loc["excerpt"]=diag["message"].clone();entries.push(loc);}
+                    }
+                    entries.into_iter().map(|entry|{
+                        let p=entry["path"].as_str().unwrap_or_default().to_string();let line=entry["line"].as_u64().unwrap_or(1);
+                        let label=format!("{}:{} · {}",p,line,entry["name"].as_str().or_else(||entry["excerpt"].as_str()).unwrap_or_default());
+                        view!{<div><button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("read_file".into(),json!({"path":p,"start_line":line.saturating_sub(2).max(1),"end_line":line+6,"max_bytes":12000}))>{label}</button></div>}
+                    }).collect_view()
+                }}
                 <details><summary>"Replace or trash a binary file"</summary>
                     <p>"Up to 64 MiB. Hash both files first; each change requires approval. Original files and private snapshots count toward the recovery budget. Use Recovery history to restore."</p>
                     <input aria-label="Binary source path" style=CONTROL_STYLE prop:value=move||binary_source.get() on:input=move|ev|{binary_source.set(event_target_value(&ev));binary_source_hash.set(String::new());}/>

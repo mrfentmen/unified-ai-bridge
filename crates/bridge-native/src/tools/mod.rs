@@ -7,6 +7,7 @@ pub mod collaboration;
 pub mod commands;
 pub mod desktop;
 pub mod development;
+pub mod code_navigation;
 pub mod file_extra;
 pub mod filesystem;
 pub mod recovery;
@@ -464,6 +465,7 @@ pub async fn dispatch(
         }
     }
     let result = match tool {
+        "list_symbols" => code_navigation::symbols(&context, arguments).await,
         "replace_file" => large_recovery::replace(&context, arguments).await,
         "image_info" => images::info(&context, arguments).await,
         "transform_image" => images::transform(&context, arguments).await,
@@ -546,6 +548,8 @@ pub async fn dispatch(
             if matches!(
                 tool,
                 "preview_document"
+                    | "list_symbols"
+                    | "search_files"
                     | "list_archive"
                     | "image_info"
                     | "patch_status"

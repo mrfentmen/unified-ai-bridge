@@ -38,16 +38,6 @@ struct ReadArgs {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SearchArgs {
-    query: String,
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
-    max_results: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct WriteArgs {
     path: String,
     content: String,
@@ -255,124 +245,7 @@ pub async fn read_file(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome
 }
 
 pub async fn search_files(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, ToolFailure> {
-    let args: SearchArgs = parse_args(args)?;
-    if args.query.trim().is_empty() {
-        return Err(ToolFailure::InvalidArguments(
-            "query cannot be empty".into(),
-        ));
-    }
-    if args.query.len() > 500 {
-        return Err(ToolFailure::InvalidArguments("query is too long".into()));
-    }
-    let raw = args.path.unwrap_or_else(|| {
-        if ctx.app.workspace.profile == bridge_core::workspace::Profile::Research {
-            ctx.agent.workspace_relative()
-        } else {
-            ".".into()
-        }
-    });
-    let root_path = ctx.resolve_existing(&raw)?;
-    if !root_path.is_dir {
-        return Err(ToolFailure::InvalidArguments(
-            "search path must be a folder".into(),
-        ));
-    }
-    ctx.check_read("search_files", &root_path)?;
-    let limit = args.max_results.unwrap_or(30).clamp(1, 100);
-    let needle = args.query.to_lowercase();
-    let workspace = ctx.workspace_root().to_path_buf();
-    let mut hits = Vec::new();
-    let mut scanned = 0usize;
-    let mut skipped = 0usize;
-    for entry in WalkDir::new(&root_path.absolute)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|entry| {
-            let name = entry.file_name().to_string_lossy();
-            !matches!(
-                name.as_ref(),
-                ".git" | "target" | "node_modules" | ".locks" | "__pycache__"
-            )
-        })
-    {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => continue,
-        };
-        if !entry.file_type().is_file() || entry.file_type().is_symlink() {
-            continue;
-        }
-        let meta = match entry.metadata() {
-            Ok(meta) => meta,
-            Err(_) => continue,
-        };
-        if meta.len() > 2 * 1024 * 1024 {
-            skipped += 1;
-            continue;
-        }
-        let rel = match entry.path().strip_prefix(&workspace) {
-            Ok(rel) => rel.to_string_lossy().to_string(),
-            Err(_) => continue,
-        };
-        let resolved = match ctx.app.sandbox().resolve(&rel, Existence::Any) {
-            Ok(resolved) => resolved,
-            Err(_) => continue,
-        };
-        if !ctx
-            .app
-            .sandbox()
-            .decide(ctx.agent, Access::Read, &resolved)
-            .is_allow()
-        {
-            continue;
-        }
-        let bytes = match fs::read(entry.path()) {
-            Ok(bytes) => bytes,
-            Err(_) => continue,
-        };
-        let Ok(text) = String::from_utf8(bytes) else {
-            skipped += 1;
-            continue;
-        };
-        scanned += 1;
-        for (line_number, line) in text.lines().enumerate() {
-            if line.to_lowercase().contains(&needle) {
-                let excerpt: String = line.trim().chars().take(300).collect();
-                hits.push(format!("{}:{}: {}", rel, line_number + 1, excerpt));
-                if hits.len() >= limit {
-                    break;
-                }
-            }
-        }
-        if hits.len() >= limit {
-            break;
-        }
-    }
-    let output = if hits.is_empty() {
-        format!(
-            "No literal matches for {:?} under {}. Scanned {scanned} text files{}.",
-            args.query,
-            root_path.display(),
-            if skipped > 0 {
-                format!("; skipped {skipped} binary/large files")
-            } else {
-                String::new()
-            }
-        )
-    } else {
-        format!(
-            "{} match(es) for {:?} under {}:\n\n{}",
-            hits.len(),
-            args.query,
-            root_path.display(),
-            hits.join("\n")
-        )
-    };
-    Ok(ToolOutcome::read(
-        format!("found {} matches", hits.len()),
-        output,
-        Some(root_path.display()),
-    ))
+    super::code_navigation::search(ctx,args).await
 }
 
 pub async fn write_document(

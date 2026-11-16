@@ -18,6 +18,8 @@ The 0.5.7 reliability pass verified read/create/read-back and approved patch del
 
 The 0.5.8 candidate implements the native portion of UAB-15: 64 MiB replacements, larger-file trash/restore, private snapshots, storage budgets and explicit retention cleanup. Ten dedicated tests, 139 total tests, 41 installed self-tests and a real packaged Native Messaging replace/restart/restore exercise passed. Chrome controls are built but live acceptance is blocked because the current Browser connection is unavailable; the working 0.5.7 browser install was preserved. UAB-15 stays open until that gate passes. See [binary recovery](BINARY-RECOVERY.md).
 
+The 0.5.9 candidate implements part of UAB-09: bounded, paginated literal search; isolated Rust syntax declaration parsing; and Cargo/rustc JSON diagnostics linked to readable workspace files. A real code test locates a function, patches it and its caller after approval, then runs a granted compiler check. Semantic references and live browser acceptance remain open. See [code navigation](CODE-NAVIGATION.md).
+
 ## 1. Make unattended work dependable
 
 Start here. The current configuration permits 16 calls per task, 4 per assistant response, 180 seconds for an approval, and 240 seconds for a tool call. These are current limits, not recommended overnight defaults. The installed host has an ad-hoc linker signature; stable signing and permission persistence still need implementation and verification.

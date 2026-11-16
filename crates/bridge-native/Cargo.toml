@@ -39,6 +39,9 @@ zip = { version = "=9.5.1", default-features = false, features = ["deflate-flate
 unicode-normalization = "0.1"
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
 
+syn = { version = "=2.0.119", features = ["full", "parsing"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 png.workspace = true

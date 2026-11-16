@@ -511,7 +511,8 @@ pub async fn execute(
         }
     };
     let truncated = bytes_seen > grant.max_output_bytes;
-    let data = json!({"command_id":grant.command_id,"exit_code":exit,"cwd":cwd.display(),"stdout":stdout,"stderr":stderr,"truncated":truncated,"bytes_seen":bytes_seen,"max_output_bytes":grant.max_output_bytes,"timed_out":timed_out});
+    let diagnostics=super::code_navigation::diagnostics(ctx,&cwd.absolute,&format!("{stdout}\n{stderr}"));
+    let data = json!({"diagnostics":diagnostics,"command_id":grant.command_id,"exit_code":exit,"cwd":cwd.display(),"stdout":stdout,"stderr":stderr,"truncated":truncated,"bytes_seen":bytes_seen,"max_output_bytes":grant.max_output_bytes,"timed_out":timed_out});
     let success = !timed_out && exit == Some(0);
     ctx.app
         .audit_path_access(

@@ -301,7 +301,7 @@ pub async fn inspect_test_results(
         Some(path.display()),
     )
     .with_data(
-        serde_json::json!({"path": path.display(), "junit_like": lower.contains("<testsuite")}),
+        serde_json::json!({"path": path.display(), "junit_like": lower.contains("<testsuite"),"diagnostics":super::code_navigation::diagnostics(ctx,ctx.workspace_root(),&text)}),
     ))
 }
 

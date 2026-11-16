@@ -2,6 +2,27 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## Code navigation candidate 0.5.9 — November 16, 2026
+
+The source and isolated package are 0.5.9; the normal Chrome package/host remain 0.5.7. No live Chrome or provider acceptance is claimed for this candidate.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 144 passed, 0 failed; one deliberately slow test ignored |
+| Rust declarations | Source line checks passed for functions, types, methods, inline modules and Unicode identifiers; comments, strings and macro expansions were not mistaken for declarations |
+| Parser failure isolation | Incomplete source and deeply nested input returned errors; a following valid parse succeeded through the same host API |
+| Search | Case-insensitive matches paginated without repeating lines; changed-file cursors refused; 100-file and excluded-entry tree limits surfaced explicitly |
+| Protected inputs | Private files, symlinks, traversal and unknown fields refused; unsupported languages explicitly direct the caller to text search |
+| Coding task | Located a function, found its caller, applied an explicitly approved two-file patch, then passed a real granted rustc metadata check |
+| Compiler errors | A deliberate type error returned E0308 and the correct readable workspace file/line; private and outside-root locations were omitted |
+| Audit | Successful declaration/search calls and the coding mutations have audit records; chain validity checked |
+| Isolated package | WASM/native/tooling release builds and native install exited 0; all staged versions 0.5.9, normal installation preserved at 0.5.7 |
+| Native transport | Real framed calls parsed a copy of the project’s recovery.rs: 21 declarations, every reported line checked against source. Search pages returned lines 224, 411, 446, 453, 459. A changed file and unsupported TypeScript returned explicit errors |
+| Installed checks | 41 self-tests passed; doctor passed SQLite, installed binary/manifest and 15 matching audit entries |
+| Previous candidate CI | 0.5.8 run 43931890870 passed Linux/Intel macOS tests and Intel packaging |
+
+The five dedicated navigation checks are part of the workspace total. Raw outputs are kept in ignored `docs/evidence/0.5.9/`. `list_symbols` is a syntax declaration reader, not semantic `find_references`; that part of UAB-09 remains pending along with live UI acceptance.
+
 ## Binary recovery candidate 0.5.8 — November 16, 2026
 
 This candidate was built and installed in an isolated directory. The live extension package and normal installed host remain **0.5.7**; no 0.5.8 Chrome or provider result is claimed.
