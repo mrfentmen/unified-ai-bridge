@@ -58,3 +58,4 @@ objc2-core-graphics = { version = "=0.3.2", default-features = false, features =
 [dev-dependencies]
 tempfile.workspace = true
 png.workspace = true
+hound = "=3.5.1"

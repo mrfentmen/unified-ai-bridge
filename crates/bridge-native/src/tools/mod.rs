@@ -13,6 +13,7 @@ pub mod git_review;
 pub mod tables;
 pub mod documents;
 pub mod document_create;
+pub mod media;
 pub mod pdf;
 pub mod workbooks;
 pub mod network;
@@ -460,7 +461,7 @@ pub async fn dispatch(
                 | catalog::Category::Collaboration
         )
         && !crate::grants::TOOLS.contains(&tool)
-        && !matches!(tool, "replace_file" | "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch" | "create_archive" | "extract_archive" | "transform_image" | "render_document_pages" | "write_sheet_range" | "create_document")
+        && !matches!(tool, "replace_file" | "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch" | "create_archive" | "extract_archive" | "transform_image" | "render_document_pages" | "write_sheet_range" | "create_document" | "transform_media")
     {
         match app.store.write_grant(&app.workspace.id(), session_id) {
             Ok(None) => {}
@@ -545,6 +546,8 @@ pub async fn dispatch(
         "git_show" => git_review::show(&context, arguments).await,
         "read_table" => tables::read(&context, arguments).await,
         "query_table" => tables::query(&context, arguments).await,
+        "media_info" => media::info(&context, arguments).await,
+        "transform_media" => media::transform(&context, arguments).await,
         "create_document" => document_create::create(&context, arguments).await,
         "document_info" => documents::info(&context, arguments).await,
         "integration_status" => crate::integrations::status(&context,arguments).await,
@@ -579,6 +582,7 @@ pub async fn dispatch(
                     | "read_table"
                     | "query_table"
                     | "document_info"
+                    | "media_info"
                     | "inspect_workbook"
                     | "read_sheet_range"
                     | "integration_status"

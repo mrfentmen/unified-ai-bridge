@@ -2,6 +2,27 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## PCM WAV candidate 0.5.20 — November 16, 2026
+
+Source/isolated package are 0.5.20. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 216 passed, 0 failed; one separately verified long command omitted from routine runs |
+| Seven dedicated checks | Exact 8/16/24/32-bit mono/stereo sample preservation with independent Hound decoding, odd padding, invalid/truncated chunks, duration/count/file limits, strict arguments, source/destination changes, lock/denial, research/private/link protections |
+| Isolated package | Native/tooling/WASM release builds exited 0; source/package/manifest/native versions matched 0.5.20 |
+| Public sample | SciPy's actual 8 kHz stereo unsigned 8-bit PCM WAV reported 800 frames. Approved trim selected frames 200–600 and created 400 frames / 0.05 seconds, preserving every selected byte and the source hash |
+| Independent decoding | Python wave reopened the output; macOS afinfo reported 400 packets / 0.050000 seconds. macOS afconvert decoded every sample to signed 16-bit PCM with values exactly matching the source conversion. No sound was played and no model received audio |
+| Denials/restart | Denied write created nothing; repeat destination, stale source hash and traversal refused. Reopened the saved hash after host restart |
+| Verification correction | A second public SciPy extensible WAV also has an inconsistent RIFF length (17,708 declared vs 17,720 actual). The first verification script incorrectly expected unsupported; the host correctly returned invalid_arguments at the earlier length check. Corrected the assertion, reran in a fresh scratch workspace, and kept the initial log. Validation was not relaxed |
+| Installed checks | 41 self-tests passed; doctor verified config/manifest/binary/SQLite and all 51 matching audit entries, including both verification runs |
+| Previous CI | 0.5.18 run 43961212786 passed Linux, Intel tests and Intel packaging. 0.5.19 run 43964530182 passed Linux; Intel jobs were still running when checked |
+| Browser | Inspect/trim controls compiled. Live UI approval/provider delivery remain unverified |
+
+Public source: [SciPy PCM sample](https://raw.githubusercontent.com/scipy/scipy/main/scipy/io/tests/data/test-8000Hz-le-2ch-1byteu.wav), SHA256 `47a109b21bd0a79615478181f6ee0a867e4733554c7c9523d3cda2f2d901209f`. This is explicitly a public audio test sample, not a user recording or provider integration. Output: `/private/tmp/uab-0520-build-zn6f6anr/scratch-general-final/output/clip.wav`, SHA256 `e2bc314adf850521c0727ad8177941d23dc335853005a981213e6ad9a1fc60f5`. Native SHA256 `45bbc2ff2bdcdbe5524750f726dcc700ce47e5601955723bd287af5c59fcc079`; WASM SHA256 `922596a064ea4012de690f897a743ccd8229dd8dbdd724ed7c7d6f5e9186e115`.
+
+Raw logs, framed messages, audio copies and independent decoded output remain in ignored `docs/evidence/0.5.20/`. The maintained implementation is Rust; Python and macOS audio utilities were independent verification only. Broader formats, playback checks, transcription, conversion, video and browser acceptance remain open. [Scope and limits](MEDIA.md).
+
 ## PDF report creation candidate 0.5.19 — November 16, 2026
 
 Source and isolated package are 0.5.19. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
@@ -15,7 +36,7 @@ Source and isolated package are 0.5.19. Normal Chrome files/native installation 
 | Visual inspection | Opened every rendered PNG: headings, paragraphs, hanging bullets, accents and page numbers were legible, with consistent margins and no clipping/overlap |
 | Denials/restart | Denied creation wrote nothing. Existing destination, traversal and unsupported glyph refused. File/hash preserved and PDF reopened after host restart |
 | Installed checks | 41 self-tests passed; doctor passed config/manifest/binary/SQLite and verified 30 matching audit entries |
-| Previous CI | 0.5.17 run 43957615402 passed Linux, Intel tests and Intel packaging. 0.5.18 run 43961212786 passed Linux and Intel tests; packaging was still running when checked |
+| Previous CI | 0.5.17 run 43957615402 passed Linux, Intel tests and Intel packaging. 0.5.18 run 43961212786 passed Linux tests, Intel tests and Intel packaging (completion rechecked during 0.5.20 work) |
 | Browser | New tool/form compiled; provider delivery, approval interaction and loaded 0.5.19 browser build remain unverified |
 
 Created file: `/private/tmp/uab-0519-build-ou5lpw7j/scratch-general/output/bridge-project-brief.pdf`, 1,203,686 bytes, SHA256 `8a101b348acfaa8e640325f525c42f2f2724e8b87a35a28331b63314764fcf26`. Installed native SHA256 `ac851ed58cccee45770086aa4458741eb16bec3fe53ff238173c65e4049401b7`; final WASM SHA256 `6d155b7e97cf922bef44ee95fde8d8c8f87f26a7c5ce26123852786430687ff8`. Raw framed messages, logs, PDF and page PNGs remain under ignored `docs/evidence/0.5.19/`. Tests use labeled fixtures; the packaged report uses repository documentation and is not a provider integration.

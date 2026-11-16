@@ -72,6 +72,8 @@ Start here. The current configuration permits 16 calls per task, 4 per assistant
 
 The 0.5.19 candidate adds the initial native UAB-19 PDF creation subset: a fixed report template, bounded structured text, embedded fonts, explicit creation approval and no overwrite. Native tests cover layout limits, Unicode extraction, page rendering and approval/path denials. DOCX generation/rendering, presentations, conversion and live browser acceptance remain pending, so UAB-19 stays open. See [PDF report creation](DOCUMENT-CREATION.md).
 
+The 0.5.20 candidate adds the initial native UAB-20 subset: bounded PCM WAV inspection and explicitly approved frame-range trimming into new files. Integer sample bytes are preserved; unsupported formats/metadata, stale hashes and protected destinations are refused. Broader media formats, playback, transcription and live browser acceptance remain pending. UAB-20 stays open. See [WAV support](MEDIA.md).
+
 ## 5. Inspect running projects and work in applications
 
 The 0.5.18 candidate implements the initial native UAB-21 subset: default-off public-origin grants, per-call approvals, bounded anonymous HTTP(S) GETs, checked/pinned DNS and redirects, static HTML text extraction and create-only downloads. Five transport/policy tests, three host-policy tests, 202 total tests and 41 installed self-tests passed. A packaged public HTML read and PDF download succeeded; the downloaded hash matched the earlier independent W3C sample. Private targets, query strings, compressed responses and authenticated URLs are intentionally unavailable. UAB-21 remains open for live Chrome acceptance. See [network tools](NETWORK.md).

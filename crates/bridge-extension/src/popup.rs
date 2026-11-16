@@ -567,6 +567,10 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let document_pages=RwSignal::new("{\"first_page\":1,\"last_page\":1,\"max_dimension\":1200}".to_string());
     let report_destination=RwSignal::new(String::new());
     let report_title=RwSignal::new(String::new());
+    let media_path=RwSignal::new(String::new());
+    let media_hash=RwSignal::new(String::new());
+    let media_destination=RwSignal::new(String::new());
+    let media_range=RwSignal::new("{\"kind\":\"trim\",\"start_frame\":0,\"end_frame\":8000}".to_string());
     let report_blocks=RwSignal::new("[{\"type\":\"paragraph\",\"text\":\"Write your report here.\"}]".to_string());
     let code_path=RwSignal::new(String::new());
     let code_query=RwSignal::new(String::new());
@@ -601,6 +605,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             workbook_hash.set(String::new());
             document_next.set(None);
             document_hash.set(String::new());
+            media_hash.set(String::new());
             zip_hash.set(String::new());
             image_hash.set(String::new());
             code_cursor.set(serde_json::Value::Null);symbol_offset.set(None);symbol_hash.set(String::new());
@@ -659,6 +664,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     if name=="read_table"||name=="query_table"{table_page.set(None);if value["status"]=="ok"&&!value["data"]["next_offset"].is_null(){let mut next=args.clone();next["offset"]=value["data"]["next_offset"].clone();next["expected_sha256"]=value["data"]["sha256"].clone();table_page.set(Some((name.clone(),next)));}}
                     if name=="extract_document_text"{document_next.set(None);if value["status"]=="ok"&&!value["data"]["next_offset"].is_null(){let mut next=args.clone();next["offset"]=value["data"]["next_offset"].clone();next["expected_sha256"]=value["data"]["sha256"].clone();document_next.set(Some(next));}}
                     if value["status"]=="ok"&&(name=="document_info"||name=="extract_document_text"){document_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());}
+                    if value["status"]=="ok"&&name=="media_info"&&args["path"].as_str()==Some(media_path.get_untracked().as_str()){media_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());}
                     if value["status"]=="ok"&&(name=="inspect_workbook"||name=="read_sheet_range"){workbook_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());}
                     if value["status"]=="ok" && name=="calculate_sha256" {
                         let hash=value["data"]["sha256"].as_str().unwrap_or_default().to_string();
@@ -783,6 +789,15 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <p>"Content blocks: heading, paragraph or bullet with text; page_break starts a new page."</p>
                     <textarea aria-label="PDF report content blocks JSON" style=CONTROL_STYLE rows="5" prop:value=move||report_blocks.get() on:input=move|ev|report_blocks.set(event_target_value(&ev))></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||report_destination.get().is_empty()||report_title.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&report_blocks.get()){Ok(blocks) if blocks.is_array()=>execute("create_document".into(),json!({"destination":report_destination.get(),"format":"pdf","template":"report","title":report_title.get(),"blocks":blocks})),_=>error.set(Some("Enter an array of report content blocks.".into()))}}>"Request PDF creation"</button>
+                </details>
+                <details><summary>"Inspect and trim WAV audio"</summary>
+                    <p>"PCM WAV only, mono/stereo, at most 32 MiB. Inspect sample rate and frame count first. A trim copies all channels exactly into a new file; it does not play, transcribe or upload audio. Metadata-bearing files are refused for trimming."</p>
+                    <input aria-label="WAV source path" style=CONTROL_STYLE placeholder="files/audio.wav" prop:value=move||media_path.get() on:input=move|ev|{media_path.set(event_target_value(&ev));media_hash.set(String::new());}/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||media_path.get().is_empty() on:click=move |_|execute("media_info".into(),json!({"path":media_path.get()}))>"Inspect WAV"</button>
+                    <input aria-label="New WAV destination" style=CONTROL_STYLE placeholder="output/clip.wav" prop:value=move||media_destination.get() on:input=move|ev|media_destination.set(event_target_value(&ev))/>
+                    <p>"Frame range is zero-based; end_frame is exclusive. One second is sample_rate frames."</p>
+                    <textarea aria-label="WAV trim frame range JSON" style=CONTROL_STYLE rows="2" prop:value=move||media_range.get() on:input=move|ev|media_range.set(event_target_value(&ev))></textarea>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||media_hash.get().is_empty()||media_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&media_range.get()){Ok(operation) if operation.is_object()=>execute("transform_media".into(),json!({"path":media_path.get(),"destination":media_destination.get(),"expected_sha256":media_hash.get(),"operation":operation})),_=>error.set(Some("Enter a trim object with start_frame and end_frame.".into()))}}>"Request trimmed WAV copy"</button>
                 </details>
                 {move||{
                     let value=result.get();

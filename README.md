@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.19 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.20 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -29,6 +29,7 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **Read and edit simple spreadsheets (0.5.16 candidate).** Inspect XLSX sheets, read cell ranges and approve a copy with changed literal cells. Originals, styles and untouched content are preserved. Formula recalculation and complex workbook edits are refused. [Workbook limits](docs/WORKBOOKS.md).
 - **Read documents and preview PDF pages (0.5.15 candidate).** Extract DOCX body text or PDF embedded text with page references on macOS. Save approved PDF page previews as new PNG files. Encrypted PDFs, OCR, Word rendering and chat image delivery remain unavailable. [Document subsets](docs/DOCUMENTS.md).
 - **Create a PDF report (0.5.19 candidate).** Supply a title, headings, paragraphs and bullets, then approve a new PDF with embedded fonts and numbered pages. Native creation, read-back and render checks are separate from live browser acceptance. DOCX, slides and richer layout remain pending. [Report format and limits](docs/DOCUMENT-CREATION.md).
+- **Inspect and trim PCM WAV audio (0.5.20 candidate).** Read format/duration and approve a new file containing an exact frame range. Original samples are preserved; unsupported metadata and formats are refused. Playback, transcription, video and chat audio delivery remain pending. [Audio subset](docs/MEDIA.md).
 - **Use your own project commands.** Grant a specific executable, arguments, working directory, timeout, and output limit. The chat selects an allowed command; it cannot invent a shell command.
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.
