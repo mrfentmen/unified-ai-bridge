@@ -96,6 +96,14 @@ fn install_native_host(
     }
     paths.ensure()?;
     let current = std::env::current_exe().context("locate the running native binary")?;
+    fs::create_dir_all(paths.base.join("locks"))?;
+    let deployment_lock = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(paths.base.join("locks/deployment.lock"))?;
+    fs2::FileExt::try_lock_exclusive(&deployment_lock)
+        .context("cannot replace the native host while command jobs are running")?;
     let installed = paths.installed_binary();
     if current != installed {
         if let Some(parent) = installed.parent() {

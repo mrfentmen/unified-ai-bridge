@@ -1,6 +1,42 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest local checks used extension/native host **0.5.0**, protocol **5**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Kimi's new artifact-import loop was exercised on 0.5.0; the full provider acceptance matrix below remains historical.
+These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.3**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The full provider acceptance matrix below remains historical.
+
+## Bounded jobs and file grants 0.5.3 — November 16, 2026
+
+| Check | Observed result |
+|---|---|
+| Workspace tests | 104 passed, 0 failed; one intentionally slow acceptance test excluded from routine runs |
+| Real long command | Separately ran a real Cargo test in a temporary workspace: 249.6 seconds, exit 0, persisted result/output; exceeds the normal 240-second foreground limit |
+| Native restart | A test killed the real Native Messaging host, started a replacement, and recovered the same completed worker receipt without creating a second job |
+| Installed selftest | 41 passed, 0 failed, including 35 simultaneous writes across seven agent identities in a temporary workspace |
+| Packaging | WASM and native/tooling release builds passed; source/package/generated manifest 0.5.3; exact installed binary and extension origin verified |
+| Signing | No valid signing certificate is configured. Desktop access prompted again after rebuilt installs. Persistent permission consent is **not solved** |
+| Loaded browser | Chrome extension details and the Kimi shadow panel show 0.5.3; host log has a fresh 0.5.3 handshake and Kimi registration |
+| Readiness | Live panel reported actual root, disk space, policy, command grants, versions and audit state; unknown OS permissions remain explicitly unknown |
+| Session display | Historical SQLite sessions no longer appear as connected; the live readiness screen showed one current registered session |
+| Live command control | Panel approval started a real `/bin/sleep` job. A bounded caffeinate assertion identified its worker PID; Stop recorded `cancelled`, the command PID disappeared, and that assertion disappeared |
+| Local report | Panel saved a JSON job receipt under application support `reports/jobs/`; the receipt reported cancellation, not success |
+| Live scoped file grant | Panel created `files/bridge-053-panel.md`, then read back its exact content. A write to `notes/bridge-053-denied.md` returned a denial and created no file; revoking the grant also denied a new file inside `files/` |
+| File grant tests | Allow case, stale content, wrong path/tool/session/workspace, research protection, symlink, budgets, expiry, revocation, and concurrent budget reservation checks pass |
+| Kimi in-conversation loop | **Blocked on this build**: website refused the verification message with “Too many people are chatting with Kimi.” Panel/host checks are not counted as a provider conversation loop |
+| Other providers / Intel | Not rerun in this milestone; physical Intel hardware remains unverified |
+
+The first selftest exposed grant-lock contention on ordinary concurrent writes. It was corrected with bounded serialization and a concurrent budget test before the final installed selftest passed. The initial job dropdown was replaced with explicit job buttons and a visible selected ID after live selection ambiguity. Raw local logs and receipts are retained under ignored `docs/evidence/0.5.3/`.
+
+Observed host log excerpts (UTC):
+
+```text
+16:35:14.722 extension hello (0.5.3)
+16:35:14.741 registered Kimi tab 163427767 ... extension=Some("0.5.3")
+16:35:48.106 panel tool run_command ok ... provider=kimi ... workspace=".../bridge-general-scratch"
+16:36:23.709 panel job control KeepAwake { job_id: "f7c412d88f4f233b2a8995044605798d", seconds: 3600 }
+16:36:49.796 panel job control Cancel { job_id: "f7c412d88f4f233b2a8995044605798d" }
+16:37:02.122 panel job control ExportReport { job_id: "f7c412d88f4f233b2a8995044605798d" }
+```
+
+This implements command jobs and scoped file operations, not a complete overnight task scheduler or a claim of unattended access to locked/login-limited websites. See [current controls and limits](OVERNIGHT.md).
+
 
 Raw transcripts, session IDs, conversation URLs, machine paths, audit exports, and build logs are retained locally and excluded from the public repository. This document summarizes those observations without publishing the chats.
 

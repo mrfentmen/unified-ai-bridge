@@ -544,7 +544,8 @@ pub async fn run() -> Result<()> {
                         active_id: app.workspace.id(),
                         workspaces: app.store.workspaces().unwrap_or_default(),
                         capabilities: serde_json::to_value(app.capabilities())?,
-                        in_flight: in_flight.load(std::sync::atomic::Ordering::SeqCst),
+                        in_flight: in_flight.load(std::sync::atomic::Ordering::SeqCst)
+                            + crate::jobs::active_count(&app).unwrap_or(1),
                         database_path: app.home.database.display().to_string(),
                         log_path: app
                             .home
@@ -592,7 +593,10 @@ pub async fn run() -> Result<()> {
                 workspace_id,
                 confirm_in_flight,
             } => {
-                if in_flight.load(std::sync::atomic::Ordering::SeqCst) > 0 && !confirm_in_flight {
+                if (in_flight.load(std::sync::atomic::Ordering::SeqCst) > 0
+                    || crate::jobs::active_count(&app).unwrap_or(1) > 0)
+                    && !confirm_in_flight
+                {
                     send_error(&tx,"confirm_in_flight","Tools are still running. Confirm the switch; those calls will finish in their original workspace.".into(),Some(request_key)).await;
                     continue;
                 }
@@ -741,6 +745,62 @@ pub async fn run() -> Result<()> {
             ExtToHost::ListCommandGrants { request_key } => {
                 send_control(&tx,request_key,Ok(serde_json::json!({"commands":app.config.workspace_commands.get(&app.workspace.id()).cloned().unwrap_or_default()}))).await;
             }
+            ExtToHost::JobControl {
+                request_key,
+                workspace_id,
+                action,
+            } => {
+                log.write(
+                    "info",
+                    &format!(
+                        "panel job control {:?} workspace={} request={}",
+                        action, workspace_id, request_key
+                    ),
+                );
+                send_control(
+                    &tx,
+                    request_key,
+                    crate::jobs::control(&app, &workspace_id, action),
+                )
+                .await;
+            }
+            ExtToHost::Preflight { request_key } => {
+                send_control(&tx, request_key, crate::tools::system::preflight(&app)).await;
+            }
+            ExtToHost::CreateWriteGrant {
+                request_key,
+                workspace_id,
+                grant,
+            } => {
+                send_control(
+                    &tx,
+                    request_key,
+                    crate::grants::create(&app, &workspace_id, grant),
+                )
+                .await;
+            }
+            ExtToHost::RevokeWriteGrant {
+                request_key,
+                workspace_id,
+                session_id,
+            } => {
+                send_control(
+                    &tx,
+                    request_key,
+                    crate::grants::revoke(&app, &workspace_id, &session_id),
+                )
+                .await;
+            }
+            ExtToHost::ListWriteGrants { request_key } => {
+                send_control(
+                    &tx,
+                    request_key,
+                    app.store
+                        .write_grants(&app.workspace.id())
+                        .map(|grants| serde_json::json!({"grants":grants})),
+                )
+                .await;
+            }
             ExtToHost::ActivityDetail {
                 request_key,
                 activity_id,
@@ -811,11 +871,18 @@ pub async fn run() -> Result<()> {
             }
             request @ (ExtToHost::RegisterArtifact { .. } | ExtToHost::RevokeArtifact { .. }) => {
                 let request_key = match &request {
-                    ExtToHost::RegisterArtifact { request_key, .. } | ExtToHost::RevokeArtifact { request_key, .. } => request_key.clone(),
+                    ExtToHost::RegisterArtifact { request_key, .. }
+                    | ExtToHost::RevokeArtifact { request_key, .. } => request_key.clone(),
                     _ => unreachable!(),
                 };
                 if !request_key.starts_with("panel-") || request_key.len() > 100 {
-                    send_error(&tx, "invalid_request_key", "Artifact grants require extension controls.".into(), Some(request_key)).await;
+                    send_error(
+                        &tx,
+                        "invalid_request_key",
+                        "Artifact grants require extension controls.".into(),
+                        Some(request_key),
+                    )
+                    .await;
                     continue;
                 }
                 let app = app.clone();
@@ -826,24 +893,62 @@ pub async fn run() -> Result<()> {
                     let _permit = semaphore.acquire_owned().await;
                     let result = tokio::task::spawn_blocking(move || {
                         let (session_id, outcome) = match request {
-                            ExtToHost::RegisterArtifact { session_id, workspace_id, download, .. } => {
-                                let outcome = tools::artifacts::register(&app, &session_id, &workspace_id, download);
+                            ExtToHost::RegisterArtifact {
+                                session_id,
+                                workspace_id,
+                                download,
+                                ..
+                            } => {
+                                let outcome = tools::artifacts::register(
+                                    &app,
+                                    &session_id,
+                                    &workspace_id,
+                                    download,
+                                );
                                 (session_id, outcome)
-                            },
-                            ExtToHost::RevokeArtifact { session_id, workspace_id, artifact_id, .. } => {
-                                let outcome = tools::artifacts::revoke(&app, &session_id, &workspace_id, &artifact_id);
+                            }
+                            ExtToHost::RevokeArtifact {
+                                session_id,
+                                workspace_id,
+                                artifact_id,
+                                ..
+                            } => {
+                                let outcome = tools::artifacts::revoke(
+                                    &app,
+                                    &session_id,
+                                    &workspace_id,
+                                    &artifact_id,
+                                );
                                 (session_id, outcome)
-                            },
+                            }
                             _ => unreachable!(),
                         };
                         if let Err(error) = &outcome {
                             if let Ok(Some((_, agent))) = app.session_agent(&session_id) {
-                                let _ = app.audit_denial(agent, &session_id, "artifact.grant", None, &error.to_string(), "denied");
+                                let _ = app.audit_denial(
+                                    agent,
+                                    &session_id,
+                                    "artifact.grant",
+                                    None,
+                                    &error.to_string(),
+                                    "denied",
+                                );
                             }
                         }
-                        HostLog::new(log_path).write("info", &format!("artifact control session={session_id} workspace={:?} result={}", app.workspace.root, if outcome.is_ok(){"ok"}else{"error"}));
+                        HostLog::new(log_path).write(
+                            "info",
+                            &format!(
+                                "artifact control session={session_id} workspace={:?} result={}",
+                                app.workspace.root,
+                                if outcome.is_ok() { "ok" } else { "error" }
+                            ),
+                        );
                         outcome.map_err(anyhow::Error::from)
-                    }).await.unwrap_or_else(|error| Err(anyhow::anyhow!("artifact control failed: {error}")));
+                    })
+                    .await
+                    .unwrap_or_else(|error| {
+                        Err(anyhow::anyhow!("artifact control failed: {error}"))
+                    });
                     send_control(&tx, request_key, result).await;
                 });
             }

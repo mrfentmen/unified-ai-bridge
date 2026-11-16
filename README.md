@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.0** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.3** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -24,6 +24,7 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.
 - **Connect reviewed native MCP tools.** Register a local native executable, discover its tools, and explicitly grant access. Each external tool call requires approval.
+- **Run bounded background work.** Approved commands can keep running through a browser reconnect. Inspect saved output, stop jobs, and grant a selected session time-limited file writes with budgets. See [overnight controls](docs/OVERNIGHT.md).
 - **Inspect the desktop.** Capture screenshots to files, list open applications, and inspect accessible windows, subject to macOS permissions. Mouse and keyboard control are still planned.
 
 For example, in a **general** workspace:
@@ -159,7 +160,7 @@ If a panel looks disconnected, first compare its build number with the extension
 
 If the composer contains your draft, the bridge leaves it alone. Finish or save that draft before sending a pending result. A selector warning means the website layout needs attention; it is not a reason to broaden file permissions.
 
-The 0.5.0 local checks passed **91 workspace tests and 41 host self-tests**, plus a real Kimi-generated download, denied import, approved import, and in-conversation read-back with matching hashes. [GitHub CI](https://github.com/mrfentmen/unified-ai-bridge/actions/workflows/ci.yml) repeats automated checks and packaging on clean runners. Details and boundaries are in [VERIFICATION.md](docs/VERIFICATION.md).
+The 0.5.3 local checks passed **104 workspace tests and 41 host self-tests**, plus a separate 249.6-second Cargo job, real host restart recovery, and live panel cancellation/keep-awake/report checks. Kimi’s generated-file import remains verified on 0.5.0; its newest conversation test was blocked by website capacity. [GitHub CI](https://github.com/mrfentmen/unified-ai-bridge/actions/workflows/ci.yml) repeats automated checks and packaging on clean runners. Details and boundaries are in [VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Project layout
 

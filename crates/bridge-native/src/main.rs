@@ -25,6 +25,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    #[command(hide = true)]
+    JobWorker { job_id: String },
     /// Run the Chrome native messaging host (default when launched by Chrome).
     Native,
     /// Initialize the workspace and save configuration.
@@ -99,6 +101,9 @@ async fn main() -> Result<()> {
         std::env::set_var("UAB_HOME", home);
     }
     match cli.command.unwrap_or(Command::Native) {
+        Command::JobWorker { job_id } => {
+            bridge_native::jobs::worker(HomePaths::discover()?, &job_id).await
+        }
         Command::Native => native_host::run().await,
         Command::Setup {
             project,

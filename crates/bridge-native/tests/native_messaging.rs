@@ -145,28 +145,37 @@ fn selected_download_crosses_real_native_framing_and_requires_import_approval() 
     let root = temp.path().join("workspace");
     let binary = binary();
     setup_workspace(&binary, &home, &root);
-    let source=temp.path().canonicalize().unwrap().join("download.bin");
-    let bytes=b"\x00\xff\x80Actual framed binary import\n";
-    std::fs::write(&source,bytes).unwrap();
-    let mut host=HostProcess::start(&binary,&home,&[]);let session=host.register();
-    let share=json!({"type":"register_artifact","request_key":"panel-share","workspace_id":host.workspace_id,"session_id":session,
+    let source = temp.path().canonicalize().unwrap().join("download.bin");
+    let bytes = b"\x00\xff\x80Actual framed binary import\n";
+    std::fs::write(&source, bytes).unwrap();
+    let mut host = HostProcess::start(&binary, &home, &[]);
+    let session = host.register();
+    let share = json!({"type":"register_artifact","request_key":"panel-share","workspace_id":host.workspace_id,"session_id":session,
         "download":{"download_id":17,"filename":source,"bytes":bytes.len(),"mime":"application/octet-stream","origin":"files.example"}});
-    host.send(&share);let registered=host.receive_until("control_result")["result"].clone();
-    assert!(registered["artifact_id"].is_string(),"{registered}");
-    host.send(&share);assert_eq!(host.receive_until("control_result")["result"],registered);
-    let list=host.tool(&session,"artifacts-list",0,"list_artifacts",json!({}));
-    assert_eq!(list["data"]["artifacts"][0],registered);
+    host.send(&share);
+    let registered = host.receive_until("control_result")["result"].clone();
+    assert!(registered["artifact_id"].is_string(), "{registered}");
+    host.send(&share);
+    assert_eq!(host.receive_until("control_result")["result"], registered);
+    let list = host.tool(&session, "artifacts-list", 0, "list_artifacts", json!({}));
+    assert_eq!(list["data"]["artifacts"][0], registered);
     assert!(!list.to_string().contains(source.to_str().unwrap()));
-    let destination="AGENTS/CHATGPT/notes/imported.bin";
+    let destination = "AGENTS/CHATGPT/notes/imported.bin";
     host.send(&json!({"type":"run_tool","request_key":"panel-import","workspace_id":host.workspace_id,"session_id":session,
         "tool":"import_artifact","arguments":{"artifact_id":registered["artifact_id"],"path":destination}}));
-    let prompt=host.receive_until("approval_required");
+    let prompt = host.receive_until("approval_required");
     assert!(!root.join(destination).exists());
-    host.send(&json!({"type":"approval_decision","approval_id":prompt["approval"]["id"],"allow":true}));
-    let result=host.receive_until("control_result")["result"].clone();assert_eq!(result["status"],"ok","{result}");
-    assert_eq!(std::fs::read(root.join(destination)).unwrap(),bytes);
-    assert_eq!(std::fs::read(source).unwrap(),bytes);
-    assert_eq!(result["data"]["sha256"],bridge_native::fsops::sha256_bytes(bytes));
+    host.send(
+        &json!({"type":"approval_decision","approval_id":prompt["approval"]["id"],"allow":true}),
+    );
+    let result = host.receive_until("control_result")["result"].clone();
+    assert_eq!(result["status"], "ok", "{result}");
+    assert_eq!(std::fs::read(root.join(destination)).unwrap(), bytes);
+    assert_eq!(std::fs::read(source).unwrap(), bytes);
+    assert_eq!(
+        result["data"]["sha256"],
+        bridge_native::fsops::sha256_bytes(bytes)
+    );
 }
 
 #[test]
@@ -610,4 +619,49 @@ fn workspace_wire_switch_rejects_stale_context_and_returns_general_capabilities(
         "workspace wire: profile=general; stale-context write denied; real file={}; audit=true",
         general.join("files/main.rs").display()
     );
+}
+
+#[test]
+fn background_command_survives_native_host_kill_and_returns_same_receipt() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let root = temp.path().join("workspace");
+    let binary = binary();
+    setup_workspace(&binary, &home, &root);
+    let mut host = HostProcess::start(&binary, &home, &[]);
+    let sid = host.register();
+    let sleep = ["/usr/bin/sleep", "/bin/sleep"]
+        .into_iter()
+        .find(|p| Path::new(p).is_file())
+        .unwrap();
+    host.send(&json!({"type":"grant_command","request_key":"grant-sleep","command":{"command_id":"durable-sleep","program":sleep,"fixed_args":["3"],"allowed_args":[],"cwd":"AGENTS/CHATGPT","timeout_secs":15,"max_output_bytes":128,"writes":false,"always_allow":true}}));
+    host.receive_until("control_result");
+    let result = host.tool(
+        &sid,
+        "start-durable-job",
+        0,
+        "run_command",
+        json!({"command_id":"durable-sleep","background":true}),
+    );
+    assert_eq!(result["status"], "ok", "{result}");
+    let id = result["data"]["job_id"].as_str().unwrap().to_string();
+    host.send(&json!({"type":"job_control","request_key":"job-detail","workspace_id":host.workspace_id,"action":{"operation":"detail","job_id":id}}));
+    host.receive_until("control_result");
+    drop(host); // SIGKILL the real native-messaging process; the worker must survive.
+    let mut next = HostProcess::start(&binary, &home, &[]);
+    let next_sid = next.register();
+    let deadline = std::time::Instant::now() + Duration::from_secs(12);
+    loop {
+        next.send(&json!({"type":"job_control","request_key":"job-after-restart","workspace_id":next.workspace_id,"action":{"operation":"detail","job_id":id}}));
+        let value = next.receive_until("control_result")["result"].clone();
+        if value["job"]["state"] == "completed" {
+            assert_eq!(value["job"]["result"]["data"]["exit_code"], 0);
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "{value}");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let list = next.tool(&next_sid, "list-after-restart", 0, "list_jobs", json!({}));
+    assert_eq!(list["data"]["jobs"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["data"]["jobs"][0]["job_id"], id);
 }

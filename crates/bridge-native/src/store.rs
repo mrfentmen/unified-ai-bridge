@@ -239,6 +239,10 @@ impl Store {
             CREATE TABLE IF NOT EXISTS activity_results (activity_id INTEGER PRIMARY KEY REFERENCES activity(id), duration_ms INTEGER NOT NULL, result_json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS file_changes (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, session_id TEXT NOT NULL, download_id INTEGER NOT NULL, record TEXT NOT NULL, UNIQUE(workspace_id, session_id, download_id));
+            CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS write_grants (workspace_id TEXT NOT NULL, session_id TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(workspace_id,session_id));
+            CREATE INDEX IF NOT EXISTS jobs_owner ON jobs(workspace_id,owner,created_at);
+            CREATE TABLE IF NOT EXISTS job_output (job_id TEXT NOT NULL REFERENCES jobs(id), seq INTEGER NOT NULL, stream TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY(job_id,seq));
             "#,
         )?;
         let has_workspace: i64 = conn.query_row(
@@ -263,6 +267,103 @@ impl Store {
         Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
     }
 
+    pub fn insert_job(&self, job: &crate::jobs::Job) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute(
+            "INSERT INTO jobs VALUES (?1,?2,?3,?4,?5)",
+            params![
+                job.id,
+                job.workspace_id,
+                job.owner,
+                job.created_at,
+                serde_json::to_string(job)?
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_write_grant(&self, grant: &crate::grants::Grant) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute("INSERT INTO write_grants VALUES (?1,?2,?3) ON CONFLICT(workspace_id,session_id) DO UPDATE SET record=excluded.record",params![grant.workspace_id,grant.session_id,serde_json::to_string(grant)?])?;
+        Ok(())
+    }
+    pub fn write_grant(
+        &self,
+        workspace: &str,
+        session: &str,
+    ) -> Result<Option<crate::grants::Grant>> {
+        let value: Option<String> = self
+            .conn
+            .lock()
+            .expect("store mutex")
+            .query_row(
+                "SELECT record FROM write_grants WHERE workspace_id=?1 AND session_id=?2",
+                params![workspace, session],
+                |r| r.get(0),
+            )
+            .optional()?;
+        value
+            .map(|v| serde_json::from_str(&v).map_err(Into::into))
+            .transpose()
+    }
+    pub fn write_grants(&self, workspace: &str) -> Result<Vec<crate::grants::Grant>> {
+        let conn = self.conn.lock().expect("store mutex");
+        let mut q = conn.prepare(
+            "SELECT record FROM write_grants WHERE workspace_id=?1 ORDER BY rowid DESC LIMIT 100",
+        )?;
+        let rows = q.query_map([workspace], |r| r.get::<_, String>(0))?;
+        rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
+    }
+
+    pub fn job(&self, id: &str) -> Result<Option<crate::jobs::Job>> {
+        let conn = self.conn.lock().expect("store mutex");
+        let value: Option<String> = conn
+            .query_row("SELECT record FROM jobs WHERE id=?1", [id], |r| r.get(0))
+            .optional()?;
+        value
+            .map(|v| serde_json::from_str(&v).map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn jobs(&self, workspace: &str, owner: Option<&str>) -> Result<Vec<crate::jobs::Job>> {
+        let conn = self.conn.lock().expect("store mutex");
+        let mut query=conn.prepare("SELECT record FROM jobs WHERE workspace_id=?1 AND (?2 IS NULL OR owner=?2) ORDER BY (json_extract(record,'$.state') NOT IN ('completed','failed','cancelled','interrupted')) DESC, created_at DESC LIMIT 100")?;
+        let rows = query.query_map(params![workspace, owner], |r| r.get::<_, String>(0))?;
+        rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
+    }
+
+    pub fn update_job(
+        &self,
+        id: &str,
+        update: impl FnOnce(&mut crate::jobs::Job) -> Result<()>,
+    ) -> Result<crate::jobs::Job> {
+        let mut conn = self.conn.lock().expect("store mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let raw: String =
+            tx.query_row("SELECT record FROM jobs WHERE id=?1", [id], |r| r.get(0))?;
+        let mut job: crate::jobs::Job = serde_json::from_str(&raw)?;
+        update(&mut job)?;
+        tx.execute(
+            "UPDATE jobs SET record=?2 WHERE id=?1",
+            params![id, serde_json::to_string(&job)?],
+        )?;
+        tx.commit()?;
+        Ok(job)
+    }
+
+    pub fn append_job_output(&self, id: &str, stream: &str, text: &str) -> Result<()> {
+        let mut conn = self.conn.lock().expect("store mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        tx.execute("INSERT INTO job_output(job_id,seq,stream,text) SELECT ?1,COALESCE(MAX(seq),0)+1,?2,?3 FROM job_output WHERE job_id=?1",params![id,stream,text])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn job_output(&self, id: &str, after: u64) -> Result<Vec<serde_json::Value>> {
+        let conn = self.conn.lock().expect("store mutex");
+        let mut query=conn.prepare("SELECT seq,stream,text FROM job_output WHERE job_id=?1 AND seq>?2 ORDER BY seq LIMIT 8")?;
+        let rows=query.query_map(params![id,after.min(i64::MAX as u64) as i64],|r|Ok(serde_json::json!({"cursor":r.get::<_,i64>(0)?,"stream":r.get::<_,String>(1)?,"text":r.get::<_,String>(2)?})))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn save_file_change(&self, record: &crate::tools::recovery::Change) -> Result<()> {
         let conn = self.conn.lock().expect("store mutex");
         conn.execute("INSERT INTO file_changes VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET record=excluded.record",
@@ -278,7 +379,11 @@ impl Store {
         Ok(())
     }
 
-    pub fn artifacts(&self, workspace: &str, session: &str) -> Result<Vec<crate::tools::artifacts::Artifact>> {
+    pub fn artifacts(
+        &self,
+        workspace: &str,
+        session: &str,
+    ) -> Result<Vec<crate::tools::artifacts::Artifact>> {
         let conn = self.conn.lock().expect("store mutex");
         let mut query = conn.prepare("SELECT record FROM artifacts WHERE workspace_id=?1 AND session_id=?2 ORDER BY rowid DESC LIMIT 100")?;
         let rows = query.query_map(params![workspace, session], |row| row.get::<_, String>(0))?;

@@ -144,6 +144,8 @@ fn bridge_ui(wide: bool) -> impl IntoView {
             </div>
 
             <WorkspaceControls status=status error=error/>
+            <ReadinessControls status=status error=error/>
+            <WriteGrantControls status=status error=error/>
             <CommandControls status=status error=error/>
             <ArtifactControls status=status error=error/>
             <ToolWorkbench status=status error=error/>
@@ -232,6 +234,7 @@ fn bridge_ui(wide: bool) -> impl IntoView {
             </Show>
 
             <SectionTitle text="Recent local activity"/>
+            <JobControls status=status error=error/>
             <ActivityFeed status=status error=error/>
 
             <Show when=move || error.get().is_some() || status.get().last_error.is_some()>
@@ -363,7 +366,10 @@ fn IntegrationControls(
 }
 
 #[component]
-fn ArtifactControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -> impl IntoView {
+fn ArtifactControls(
+    status: RwSignal<StatusView>,
+    error: RwSignal<Option<String>>,
+) -> impl IntoView {
     let session = RwSignal::new(String::new());
     let download = RwSignal::new(String::new());
     let downloads = RwSignal::new(Vec::<serde_json::Value>::new());
@@ -374,35 +380,63 @@ fn ArtifactControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>
     let busy = RwSignal::new(false);
     let displayed_scope = RwSignal::new(String::new());
     Effect::new(move |_| {
-        let scope=format!("{}:{}",status.get().active_id,session.get());
+        let scope = format!("{}:{}", status.get().active_id, session.get());
         if scope != displayed_scope.get_untracked() {
-            displayed_scope.set(scope); shared.set(Vec::new()); selected.set(String::new()); path.set(String::new()); result.set(serde_json::Value::Null);
+            displayed_scope.set(scope);
+            shared.set(Vec::new());
+            selected.set(String::new());
+            path.set(String::new());
+            result.set(serde_json::Value::Null);
         }
     });
     let action = move |op: &'static str| {
-        let current=status.get_untracked(); let sid=session.get_untracked();
-        if op!="browser_downloads" && !current.sessions.iter().any(|s|s.id==sid) {
-            error.set(Some("Choose a connected conversation to share this file with.".into())); return;
+        let current = status.get_untracked();
+        let sid = session.get_untracked();
+        if op != "browser_downloads" && !current.sessions.iter().any(|s| s.id == sid) {
+            error.set(Some(
+                "Choose a connected conversation to share this file with.".into(),
+            ));
+            return;
         }
-        let workspace=current.active_id;
-        let request=match op {
-            "browser_downloads"=>json!({"op":op}),
-            "share_download"=>{
-                let Ok(id)=download.get_untracked().parse::<i32>() else {error.set(Some("Select a completed download first.".into()));return;};
+        let workspace = current.active_id;
+        let request = match op {
+            "browser_downloads" => json!({"op":op}),
+            "share_download" => {
+                let Ok(id) = download.get_untracked().parse::<i32>() else {
+                    error.set(Some("Select a completed download first.".into()));
+                    return;
+                };
                 json!({"op":op,"download_id":id,"workspace_id":workspace,"session_id":sid})
-            },
-            "revoke_artifact"=>json!({"op":op,"artifact_id":selected.get_untracked(),"workspace_id":workspace,"session_id":sid}),
-            _=>json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":op,"arguments":if op=="import_artifact"{json!({"artifact_id":selected.get_untracked(),"path":path.get_untracked()})}else{json!({})}}),
+            }
+            "revoke_artifact" => {
+                json!({"op":op,"artifact_id":selected.get_untracked(),"workspace_id":workspace,"session_id":sid})
+            }
+            _ => {
+                json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":op,"arguments":if op=="import_artifact"{json!({"artifact_id":selected.get_untracked(),"path":path.get_untracked()})}else{json!({})}})
+            }
         };
-        busy.set(true); error.set(None);
+        busy.set(true);
+        error.set(None);
         spawn_local(async move {
             match workspace_request(request).await {
-                Ok(value)=>{
-                    if op=="browser_downloads" {
-                        downloads.set(value["downloads"].as_array().cloned().unwrap_or_default()); download.set(String::new());
-                    } else if status.get_untracked().active_id==workspace && session.get_untracked()==sid {
-                        if value["status"]=="error" {error.set(Some(value["error"].as_str().unwrap_or("File operation failed").into()));}
-                        if op=="share_download" {selected.set(value["artifact_id"].as_str().unwrap_or_default().into());}
+                Ok(value) => {
+                    if op == "browser_downloads" {
+                        downloads.set(value["downloads"].as_array().cloned().unwrap_or_default());
+                        download.set(String::new());
+                    } else if status.get_untracked().active_id == workspace
+                        && session.get_untracked() == sid
+                    {
+                        if value["status"] == "error" {
+                            error.set(Some(
+                                value["error"]
+                                    .as_str()
+                                    .unwrap_or("File operation failed")
+                                    .into(),
+                            ));
+                        }
+                        if op == "share_download" {
+                            selected.set(value["artifact_id"].as_str().unwrap_or_default().into());
+                        }
                         result.set(value);
                         match workspace_request(json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":"list_artifacts","arguments":{}})).await {
                             Ok(list) if status.get_untracked().active_id==workspace && session.get_untracked()==sid=>{
@@ -412,9 +446,11 @@ fn ArtifactControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>
                             Err(err)=>error.set(Some(err)), _=>{},
                         }
                     }
-                }, Err(err)=>error.set(Some(err)),
+                }
+                Err(err) => error.set(Some(err)),
             }
-            busy.set(false); refresh(status,error);
+            busy.set(false);
+            refresh(status, error);
         });
     };
     view! {
@@ -777,3 +813,188 @@ fn decide(id: String, allow: bool, status: RwSignal<StatusView>, error: RwSignal
 
 // Suppress unused import warnings without a blanket allow.
 const _: Duration = Duration::from_millis(1);
+
+#[component]
+fn ReadinessControls(
+    status: RwSignal<StatusView>,
+    error: RwSignal<Option<String>>,
+) -> impl IntoView {
+    let report = RwSignal::new(String::new());
+    view! {
+        <details style="margin:8px 0"><summary>"Readiness check"</summary>
+            <div>{move||{
+                let s=status.get();
+                if s.bridge!="connected" {"BLOCKED: native host is offline".into()}
+                else if s.extension_build!=crate::model::EXTENSION_VERSION || s.host_version!=crate::model::EXTENSION_VERSION {format!("BLOCKED: loaded builds differ — panel {}, worker {}, host {}",crate::model::EXTENSION_VERSION,s.extension_build,s.host_version)}
+                else if s.capabilities["read_only"]==true {"BLOCKED for writes: workspace is locked".into()}
+                else {format!("Connected · {} registered sessions · account/composer readiness must be checked in each tab",s.sessions.len())}
+            }}</div>
+            <button style=CONTROL_STYLE on:click=move |_|spawn_local(async move{
+                match workspace_request(json!({"op":"preflight"})).await{Ok(value)=>report.set(serde_json::to_string_pretty(&value).unwrap_or_default()),Err(e)=>error.set(Some(e))}
+            })>"Check host and workspace"</button>
+            <pre style="white-space:pre-wrap;overflow:auto;max-height:340px">{move||report.get()}</pre>
+        </details>
+    }
+}
+
+#[component]
+fn JobControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -> impl IntoView {
+    let jobs = RwSignal::new(Vec::<serde_json::Value>::new());
+    let selected = RwSignal::new(String::new());
+    let detail = RwSignal::new(String::new());
+    let cursor = RwSignal::new(0u64);
+    let output = RwSignal::new(String::new());
+    let seen_workspace = RwSignal::new(String::new());
+    let busy = RwSignal::new(false);
+    Effect::new(move |_| {
+        let root = status.get().active_id;
+        if root != seen_workspace.get_untracked() {
+            seen_workspace.set(root);
+            jobs.set(vec![]);
+            selected.set(String::new());
+            cursor.set(0);
+            output.set(String::new());
+            detail.set(String::new());
+        }
+    });
+    let request = move |action: serde_json::Value| {
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
+        let workspace = status.get_untracked().active_id;
+        spawn_local(async move {
+            let result = workspace_request(
+                json!({"op":"job_control","workspace_id":workspace,"action":action}),
+            )
+            .await;
+            if status.get_untracked().active_id == workspace {
+                match result {
+                    Ok(value) => {
+                        error.set(None);
+                        if let Some(rows) = value["jobs"].as_array() {
+                            jobs.set(rows.clone());
+                            detail.set(format!("Loaded {} jobs for this workspace.", rows.len()));
+                            if selected.get_untracked().is_empty() {
+                                selected.set(
+                                    rows.first()
+                                        .and_then(|j| j["job_id"].as_str())
+                                        .unwrap_or_default()
+                                        .into(),
+                                );
+                            }
+                        } else if let Some(chunks) = value["chunks"].as_array() {
+                            detail.set(
+                                serde_json::to_string_pretty(&value["job"]).unwrap_or_default(),
+                            );
+                            let text = chunks
+                                .iter()
+                                .map(|c| {
+                                    format!(
+                                        "[{}] {}",
+                                        c["stream"].as_str().unwrap_or_default(),
+                                        c["text"].as_str().unwrap_or_default()
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            output.update(|v| {
+                                v.push_str(&text);
+                                if v.len() > 100_000 {
+                                    let mut start = v.len() - 100_000;
+                                    while !v.is_char_boundary(start) {
+                                        start += 1;
+                                    }
+                                    v.drain(..start);
+                                }
+                            });
+                            cursor.set(value["next_cursor"].as_u64().unwrap_or(0));
+                        } else {
+                            detail.set(serde_json::to_string_pretty(&value).unwrap_or_default());
+                        }
+                    }
+                    Err(e) => error.set(Some(e)),
+                }
+            }
+            busy.set(false);
+        });
+    };
+    view! {
+        <details style="margin:10px 0"><summary>"Command jobs"</summary>
+            <div>"Approved background commands survive reconnects. Stop ends the process; it does not undo files already written. Refresh for the latest receipt."</div>
+            <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|request(json!({"operation":"list"}))>"Refresh jobs"</button>
+            <div style="display:grid;gap:4px;max-height:220px;overflow:auto">{move||jobs.get().into_iter().map(|j|{
+                let id=j["job_id"].as_str().unwrap_or_default().to_string();
+                let label=format!("{} · {} · {}",j["command_id"].as_str().unwrap_or_default(),j["state"].as_str().unwrap_or_default(),&id[..id.len().min(8)]);
+                view!{<button style=CONTROL_STYLE on:click=move |_|{selected.set(id.clone());cursor.set(0);output.set(String::new());request(json!({"operation":"detail","job_id":id,"after":0}));}>{label}</button>}
+            }).collect_view()}</div>
+            <div style="font-family:monospace;word-break:break-all">{move||format!("Selected job: {}",selected.get())}</div>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected.get().is_empty() on:click=move |_|request(json!({"operation":"detail","job_id":selected.get(),"after":cursor.get()}))>"Read status / next output"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected.get().is_empty() on:click=move |_|request(json!({"operation":"cancel","job_id":selected.get()}))>"Stop job"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected.get().is_empty() on:click=move |_|request(json!({"operation":"keep_awake","job_id":selected.get(),"seconds":3600}))>"Keep awake for job (up to 1 hour)"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected.get().is_empty() on:click=move |_|request(json!({"operation":"keep_awake","job_id":selected.get(),"seconds":0}))>"Release keep-awake"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||selected.get().is_empty() on:click=move |_|request(json!({"operation":"export_report","job_id":selected.get()}))>"Save local job receipt"</button>
+            <pre style="white-space:pre-wrap;overflow:auto;max-height:260px">{move||detail.get()}</pre>
+            <pre style="white-space:pre-wrap;overflow:auto;max-height:260px">{move||output.get()}</pre>
+        </details>
+    }
+}
+
+#[component]
+fn WriteGrantControls(
+    status: RwSignal<StatusView>,
+    error: RwSignal<Option<String>>,
+) -> impl IntoView {
+    let session = RwSignal::new(String::new());
+    let directory = RwSignal::new(String::from("files"));
+    let seconds = RwSignal::new(String::from("3600"));
+    let calls = RwSignal::new(String::from("50"));
+    let bytes = RwSignal::new(String::from("1048576"));
+    let files = RwSignal::new(String::from("20"));
+    let selected = RwSignal::new(vec![String::from("write_document")]);
+    let grants = RwSignal::new(Vec::<serde_json::Value>::new());
+    let notice = RwSignal::new(String::new());
+    let request = move |message: serde_json::Value| {
+        let root = status.get_untracked().active_id;
+        spawn_local(async move {
+            match workspace_request(message).await {
+                Ok(value) => {
+                    if status.get_untracked().active_id == root {
+                        if let Some(list) = value["grants"].as_array() {
+                            grants.set(list.clone());
+                        }
+                        notice.set(serde_json::to_string_pretty(&value).unwrap_or_default());
+                        error.set(None);
+                    }
+                }
+                Err(e) => error.set(Some(e)),
+            }
+        });
+    };
+    view! {
+        <details style="margin:8px 0"><summary>"Scoped file-write grants"</summary>
+            <div>"Grant selected file operations to one registered session in an existing directory. Expiry, revocation and exhausted budgets stop further granted writes. Each attempted write reserves its full resulting byte size. Other capabilities require their own approval. A reconnect may require a new session grant."</div>
+            <select aria-label="Write grant session" style=CONTROL_STYLE prop:value=move||session.get() on:change=move|ev|session.set(event_target_value(&ev))>
+                <option value="">"Choose session"</option>{move||status.get().sessions.into_iter().filter(|s|s.workspace_id==status.get().active_id).map(|s|view!{<option value=s.id>{format!("{} · tab {} · {}",s.provider,s.tab_id,s.conversation.unwrap_or_default())}</option>}).collect_view()}
+            </select>
+            <input aria-label="Write grant directory" style=CONTROL_STYLE prop:value=move||directory.get() on:input=move|ev|directory.set(event_target_value(&ev))/>
+            { ["write_document","edit_document","append_document","copy_file","create_folder"].into_iter().map(|tool|view!{<label><input type="checkbox" prop:checked=move||selected.get().iter().any(|t|t==tool) on:change=move|ev|{let checked=event_target_checked(&ev);selected.update(|v|{v.retain(|t|t!=tool);if checked{v.push(tool.into());}});}/>{tool}</label>}).collect_view()}
+            <label>"Duration (seconds)"<input style=CONTROL_STYLE prop:value=move||seconds.get() on:input=move|ev|seconds.set(event_target_value(&ev))/></label>
+            <label>"Write calls"<input style=CONTROL_STYLE prop:value=move||calls.get() on:input=move|ev|calls.set(event_target_value(&ev))/></label>
+            <label>"Total bytes"<input style=CONTROL_STYLE prop:value=move||bytes.get() on:input=move|ev|bytes.set(event_target_value(&ev))/></label>
+            <label>"Distinct destination paths"<input style=CONTROL_STYLE prop:value=move||files.get() on:input=move|ev|files.set(event_target_value(&ev))/></label>
+            <button style=CONTROL_STYLE on:click=move |_|{
+                match (seconds.get().parse::<u64>(),calls.get().parse::<u64>(),bytes.get().parse::<u64>(),files.get().parse::<usize>()){
+                    (Ok(seconds),Ok(max_calls),Ok(max_bytes),Ok(max_files))=>request(json!({"op":"create_write_grant","workspace_id":status.get().active_id,"grant":{"session_id":session.get(),"directory":directory.get(),"tools":selected.get(),"seconds":seconds,"max_calls":max_calls,"max_bytes":max_bytes,"max_files":max_files}})),
+                    _=>error.set(Some("Grant budgets must be positive whole numbers.".into())),
+                }
+            }>"Grant selected file operations"</button>
+            <button style=CONTROL_STYLE on:click=move |_|request(json!({"op":"list_write_grants"}))>"Refresh grants"</button>
+            {move||grants.get().into_iter().filter(|g|g["workspace_id"]==status.get().active_id).map(|g|{
+                let sid=g["session_id"].as_str().unwrap_or_default().to_string();let summary=format!("{} · {} · calls {}/{} · bytes {}/{} · revoked {} · expires {}",sid,g["directory"],g["used_calls"],g["max_calls"],g["used_bytes"],g["max_bytes"],g["revoked"],g["expires_at"]);
+                view!{<div style="word-break:break-all">{summary}<button style=CONTROL_STYLE on:click=move |_|request(json!({"op":"revoke_write_grant","workspace_id":status.get().active_id,"session_id":sid}))>"Revoke"</button></div>}
+            }).collect_view()}
+            <pre style="white-space:pre-wrap;max-height:200px;overflow:auto">{move||notice.get()}</pre>
+        </details>
+    }
+}

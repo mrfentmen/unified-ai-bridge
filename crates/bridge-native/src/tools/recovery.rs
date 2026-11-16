@@ -130,7 +130,8 @@ pub async fn mutate(
         content.unwrap_or_default(),
     );
     let approved = force_approval || matches!(decision, Decision::Approval(_));
-    if approved {
+    let scoped = crate::grants::applicable(ctx, tool, &initial, content.map_or(0, |b| b.len()))?;
+    if approved && (!scoped || force_approval) {
         ctx.app
             .request_approval(
                 ctx.session_id,
@@ -161,7 +162,7 @@ pub async fn mutate(
     }
     match ctx.app.current_write_decision(ctx.agent, access, &path) {
         Decision::Deny(reason) => return Err(ToolFailure::PermissionDenied(reason)),
-        Decision::Approval(_) if !approved => {
+        Decision::Approval(_) if !approved && !scoped => {
             return Err(ToolFailure::PermissionDenied(
                 "write policy changed; request approval again".into(),
             ))
@@ -173,6 +174,7 @@ pub async fn mutate(
             "file changed while waiting for approval; preview it again".into(),
         ));
     }
+    let _grant = crate::grants::reserve(ctx, tool, &path, content.map_or(0, |b| b.len()))?;
     let mut random = [0u8; 16];
     rand::rngs::OsRng.fill_bytes(&mut random);
     let mut change = Change {

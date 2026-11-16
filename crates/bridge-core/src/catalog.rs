@@ -48,6 +48,13 @@ impl Category {
 const PATH: &str = r#"{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative path"}},"required":["path"],"additionalProperties":false}"#;
 
 pub const TOOLS: &[ToolSpec] = &[
+    ToolSpec { name:"list_jobs",category:Category::Development,description:"List persistent command jobs belonging to this conversation and workspace, including interrupted outcomes. Does not resume or rerun commands.",arguments:"(none)",schema:r#"{"type":"object","properties":{},"additionalProperties":false}"#,writes:false },
+    ToolSpec { name:"job_status",category:Category::Development,description:"Read a command job's status and terminal result. A queued or running job is not a successful command result.",arguments:"job_id",schema:r#"{"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false}"#,writes:false },
+    ToolSpec { name:"read_job_output",category:Category::Development,description:"Read at most eight bounded output chunks after a cursor. Reuse next_cursor; poll sparingly and never repeat run_command to poll.",arguments:"job_id, after? (cursor)",schema:r#"{"type":"object","properties":{"job_id":{"type":"string"},"after":{"type":"integer","minimum":0}},"required":["job_id"],"additionalProperties":false}"#,writes:false },
+    ToolSpec { name:"cancel_job",category:Category::Development,description:"Request cancellation of a job owned by this conversation. Works in read-only mode; check status for acknowledgement. Does not undo changes already made.",arguments:"job_id",schema:r#"{"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"],"additionalProperties":false}"#,writes:true },
+    ToolSpec { name:"inspect_processes",category:Category::Development,description:"List bridge-owned processes for this conversation/workspace without exposing command arguments, environments or unrelated processes.",arguments:"(none)",schema:r#"{"type":"object","properties":{},"additionalProperties":false}"#,writes:false },
+    ToolSpec { name: "workspace_info", category: Category::Filesystem, description: "Inspect the current root, profile, policy, available tools, limits and granted command IDs; no secret configuration values.", arguments: "(none)", schema: r#"{"type":"object","properties":{},"additionalProperties":false}"#, writes: false },
+    ToolSpec { name: "system_info", category: Category::Development, description: "Inspect OS, architecture, host/protocol versions and workspace free disk. OS permission grants are unknown until actually exercised.", arguments: "(none)", schema: r#"{"type":"object","properties":{},"additionalProperties":false}"#, writes: false },
     ToolSpec {
         name: "list_artifacts", category: Category::Filesystem,
         description: "List browser downloads explicitly shared with this session and workspace. Returns metadata only; never browses Downloads or discovers website files automatically.",
@@ -129,9 +136,9 @@ pub const TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "run_command", category: Category::Development,
-        description: "Run a command ID explicitly granted for this workspace. No shell; optional arguments must exactly match an approved sequence. Requires approval unless always allowed. Captured output is capped; nonzero exit is an error result.",
-        arguments: "command_id, args? (one approved argument sequence)",
-        schema: r#"{"type":"object","properties":{"command_id":{"type":"string"},"args":{"type":"array","items":{"type":"string"},"maxItems":32}},"required":["command_id"],"additionalProperties":false}"#, writes: true,
+        description: "Run a command ID explicitly granted for this workspace. No shell; optional arguments must exactly match an approved sequence. Requires approval unless always allowed. Output is capped. background=true returns a persistent job ID for longer commands, not a completed result.",
+        arguments: "command_id, args? (one approved argument sequence), background? (default false)",
+        schema: r#"{"type":"object","properties":{"command_id":{"type":"string"},"args":{"type":"array","items":{"type":"string"},"maxItems":32},"background":{"type":"boolean"}},"required":["command_id"],"additionalProperties":false}"#, writes: true,
     },
     ToolSpec {
         name: "list_files",

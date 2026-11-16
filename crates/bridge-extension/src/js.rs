@@ -16,6 +16,8 @@ extern "C" {
     pub fn runtime_on_message_listener(
         callback: &Closure<dyn FnMut(JsValue, JsValue, JsValue) -> JsValue>,
     );
+    #[wasm_bindgen(js_namespace = ["chrome", "tabs", "onRemoved"], js_name = addListener)]
+    pub fn tabs_on_removed_listener(callback: &Closure<dyn FnMut(JsValue)>);
 
     #[wasm_bindgen(js_namespace = ["chrome", "runtime"], js_name = getURL)]
     pub fn extension_url(path: &str) -> String;

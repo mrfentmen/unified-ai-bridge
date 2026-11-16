@@ -1,5 +1,5 @@
-pub mod collaboration;
 pub mod artifacts;
+pub mod collaboration;
 pub mod commands;
 pub mod desktop;
 pub mod development;
@@ -7,6 +7,7 @@ pub mod file_extra;
 pub mod filesystem;
 pub mod recovery;
 pub mod research;
+pub mod system;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -351,14 +352,22 @@ impl<'a> ToolContext<'a> {
                 path.display()
             )));
         }
-        let approved = self.authorize_write(tool, &path).await?;
+        let scoped = crate::grants::applicable(self, tool, &path, 0)?;
+        let approved = if scoped {
+            true
+        } else {
+            self.authorize_write(tool, &path).await?
+        };
         let _lock = fsops::PathLock::acquire(&self.app.workspace.lock_dir, &path.display())
             .map_err(|err| ToolFailure::Internal(err.to_string()))?;
         let current = self.resolve_any(raw)?;
         if current.absolute != path.absolute || (current.exists && !current.is_dir) {
-            return Err(ToolFailure::Conflict("folder target changed during approval".into()));
+            return Err(ToolFailure::Conflict(
+                "folder target changed during approval".into(),
+            ));
         }
         self.recheck_access(Access::Write, &current, approved)?;
+        let _grant = crate::grants::reserve(self, tool, &current, 0)?;
         fs::create_dir_all(&path.absolute)
             .map_err(|err| ToolFailure::Io(format!("create folder {}: {err}", path.display())))?;
         self.app
@@ -414,7 +423,9 @@ pub async fn dispatch(
     let Some(spec) = catalog::find(tool) else {
         return ToolResultMessage::error(tool, "unknown_tool", format!("unknown tool `{tool}`"));
     };
-    if !app.workspace.profile.allows(spec) || (app.workspace.read_only && spec.writes) {
+    if !app.workspace.profile.allows(spec)
+        || (app.workspace.read_only && spec.writes && tool != "cancel_job")
+    {
         let reason = format!(
             "tool {tool} is unavailable in profile {} (read_only={})",
             app.workspace.profile.name(),
@@ -425,7 +436,36 @@ pub async fn dispatch(
         return ToolResultMessage::error(tool, "permission_denied", reason);
     }
     let context = ToolContext::new(app, agent, session_id);
+    // A scoped grant cannot be bypassed by choosing another filesystem writer.
+    // Trash/restore/import already have their own mandatory approval path.
+    if spec.writes
+        && matches!(
+            spec.category,
+            catalog::Category::Filesystem
+                | catalog::Category::Research
+                | catalog::Category::Collaboration
+        )
+        && !crate::grants::TOOLS.contains(&tool)
+        && !matches!(tool, "delete_file" | "restore_change" | "import_artifact")
+    {
+        match app.store.write_grant(&app.workspace.id(), session_id) {
+            Ok(None) => {}
+            Ok(Some(_)) => {
+                let reason = "this operation is outside the session's scoped file-write grant";
+                let _ = app.audit_denial(agent, session_id, tool, None, reason, "denied");
+                return ToolResultMessage::error(tool, "permission_denied", reason.into());
+            }
+            Err(e) => return ToolResultMessage::error(tool, "grant_error", e.to_string()),
+        }
+    }
     let result = match tool {
+        "list_jobs" => crate::jobs::list(&context, arguments).await,
+        "job_status" => crate::jobs::status(&context, arguments).await,
+        "read_job_output" => crate::jobs::output(&context, arguments).await,
+        "cancel_job" => crate::jobs::cancel(&context, arguments).await,
+        "inspect_processes" => crate::jobs::processes(&context, arguments).await,
+        "workspace_info" => system::workspace_info(&context, arguments).await,
+        "system_info" => system::system_info(&context, arguments).await,
         "list_artifacts" => artifacts::list(&context, arguments).await,
         "import_artifact" => artifacts::import(&context, arguments).await,
         "list_files" => filesystem::list_files(&context, arguments).await,
@@ -491,6 +531,12 @@ pub async fn dispatch(
             if matches!(
                 tool,
                 "preview_document"
+                    | "list_jobs"
+                    | "job_status"
+                    | "read_job_output"
+                    | "inspect_processes"
+                    | "workspace_info"
+                    | "system_info"
                     | "list_artifacts"
                     | "list_changes"
                     | "file_tree"

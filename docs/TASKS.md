@@ -4,6 +4,10 @@ This is the actionable backlog after 0.5.0, updated November 16, 2026. All boxes
 
 Current capabilities come from `crates/bridge-core/src/catalog.rs`; live evidence belongs in [VERIFICATION.md](VERIFICATION.md). Ordinary file editing, append/copy/trash/restore, batch reads, glob/tree/diff, Git status/diff, approved commands, native MCP discovery/calls, and selected-download imports already exist. Extend them where indicated instead of creating duplicate tools.
 
+## Current implementation progress
+
+The 0.5.3 work implements scoped file-write grants, persistent command workers, resumable output, cancellation, system/workspace information, readiness/job controls, bounded macOS keep-awake and local job receipts. See [Overnight controls](OVERNIGHT.md). These are parts of UAB-01–07; the boxes stay open until each full acceptance condition passes. Stable certificate signing and physical Intel testing remain external checks. Whole-task orchestration, pause/resume, scheduling and a comprehensive morning report are still pending.
+
 ## 1. Make unattended work dependable
 
 Start here. The current configuration permits 16 calls per task, 4 per assistant response, 180 seconds for an approval, and 240 seconds for a tool call. These are current limits, not recommended overnight defaults. The installed host has an ad-hoc linker signature; stable signing and permission persistence still need implementation and verification.

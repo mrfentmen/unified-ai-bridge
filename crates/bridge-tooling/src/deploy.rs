@@ -113,6 +113,22 @@ pub fn run() -> Result<()> {
         .try_lock_exclusive()
         .context("another bridge deployment is running")?;
     let toolchain = Toolchain::discover(&root)?;
+    let home = std::env::var_os("UAB_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+                .join("Library/Application Support/unified-ai-bridge")
+        });
+    fs::create_dir_all(home.join("locks"))?;
+    let deployment_lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(home.join("locks/deployment.lock"))?;
+    deployment_lock.try_lock_exclusive().context(
+        "cannot deploy while command jobs are running; cancel them or wait for completion",
+    )?;
     println!("Pinned CARGO={}", toolchain.cargo.display());
     println!("Pinned RUSTC={}", toolchain.rustc.display());
     let extension = root.join("crates/bridge-extension");
@@ -152,6 +168,10 @@ pub fn run() -> Result<()> {
         "native and tooling release build",
     )?;
     let binary = target.join("release/unified-ai-bridge-native");
+    sign_host(&binary)?;
+    // The installer acquires this same exclusive lock itself. If a new job
+    // starts in this gap, installation fails instead of replacing its worker.
+    drop(deployment_lock);
     checked(
         Command::new(&binary)
             .arg("install")
@@ -177,6 +197,22 @@ pub fn run() -> Result<()> {
     println!("Open chrome://extensions, find Unified AI Bridge (gdoojijdmbacpolhfbgebeciagllgcop), and click Reload.");
     println!("Reload each provider tab. Confirm chrome://extensions and the panel footer both show {version}.");
     println!("Confirm the NEW host log line says `extension hello ({version})`. A build receipt is not proof of a loaded build.");
+    Ok(())
+}
+
+/// The identity is supplied by the user/CI; never create or alter keychain
+/// trust as part of deployment. Stable identifiers alone do not make ad-hoc
+/// signatures retain macOS consent across rebuilds.
+fn sign_host(binary: &Path) -> Result<()> {
+    match std::env::var("UAB_SIGNING_IDENTITY") {
+        Ok(identity) if !identity.trim().is_empty() => {
+            ensure!(cfg!(target_os = "macos"), "host signing is only supported on macOS");
+            ensure!(identity != "-" && !identity.starts_with('-'), "use a real code-signing identity, not an ad-hoc signature");
+            checked(Command::new("/usr/bin/codesign").args(["--force", "--sign", &identity, "--identifier", "com.unified_ai_bridge.host", "--options", "runtime"]).arg(binary), "native host signing")?;
+            checked(Command::new("/usr/bin/codesign").args(["--verify", "--strict"]).arg(binary), "native host signature verification")?;
+        }
+        _ => println!("NOTE host signing: no UAB_SIGNING_IDENTITY configured; macOS file permission persistence across rebuilds is unverified."),
+    }
     Ok(())
 }
 

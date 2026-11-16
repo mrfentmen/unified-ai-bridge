@@ -43,6 +43,27 @@ pub enum ExtToHost {
         session_id: String,
     },
     Status,
+    JobControl {
+        request_key: String,
+        workspace_id: String,
+        action: crate::jobs::Control,
+    },
+    Preflight {
+        request_key: String,
+    },
+    CreateWriteGrant {
+        request_key: String,
+        workspace_id: String,
+        grant: crate::grants::Request,
+    },
+    RevokeWriteGrant {
+        request_key: String,
+        workspace_id: String,
+        session_id: String,
+    },
+    ListWriteGrants {
+        request_key: String,
+    },
     ListWorkspaces {
         request_key: String,
     },

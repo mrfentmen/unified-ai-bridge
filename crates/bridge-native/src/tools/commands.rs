@@ -2,7 +2,7 @@ use crate::{
     failure::ToolFailure,
     tools::{parse_args, ToolContext, ToolOutcome},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::process::Stdio;
 use std::sync::{
@@ -23,6 +23,16 @@ struct RunArgs {
     command_id: String,
     #[serde(default)]
     args: Vec<String>,
+    #[serde(default)]
+    background: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PreparedCommand {
+    pub grant: crate::config::AllowedCommand,
+    pub args: Vec<String>,
+    pub program_sha256: String,
+    pub cwd: std::path::PathBuf,
 }
 
 /// Suggestions only. The user must grant each exact invocation explicitly.
@@ -124,10 +134,12 @@ pub async fn list_allowed_commands(
 async fn capture(
     mut stream: impl AsyncRead + Unpin,
     budget: Arc<AtomicUsize>,
+    sink: Option<(Arc<crate::store::Store>, String, &'static str)>,
 ) -> std::io::Result<(String, usize)> {
     let mut kept = Vec::new();
     let mut seen = 0usize;
     let mut buffer = [0u8; 8192];
+    let mut pending_utf8 = Vec::new();
     loop {
         let count = stream.read(&mut buffer).await?;
         if count == 0 {
@@ -140,6 +152,27 @@ async fn capture(
             })
             .unwrap();
         kept.extend_from_slice(&buffer[..count.min(prior)]);
+        if let Some((store, id, name)) = &sink {
+            if prior > 0 {
+                // The persisted text is capped by the shared budget. Process
+                // output is untrusted text, never commands for the next step.
+                pending_utf8.extend_from_slice(&buffer[..count.min(prior)]);
+                let text = decode_output(&mut pending_utf8, false);
+                if !text.is_empty() {
+                    store
+                        .append_job_output(id, name, &text)
+                        .map_err(std::io::Error::other)?;
+                }
+            }
+        }
+    }
+    if let Some((store, id, name)) = &sink {
+        let text = decode_output(&mut pending_utf8, true);
+        if !text.is_empty() {
+            store
+                .append_job_output(id, name, &text)
+                .map_err(std::io::Error::other)?;
+        }
     }
     let mut text = String::from_utf8_lossy(&kept).into_owned();
     let mut boundary = kept.len().min(text.len());
@@ -148,6 +181,51 @@ async fn capture(
     }
     text.truncate(boundary);
     Ok((text, seen))
+}
+
+/// Keep incomplete code points across pipe reads. Invalid bytes become one
+/// ASCII marker, so persisted text cannot exceed the raw output-byte budget.
+fn decode_output(pending: &mut Vec<u8>, flush: bool) -> String {
+    let mut text = String::new();
+    while !pending.is_empty() {
+        match std::str::from_utf8(pending) {
+            Ok(valid) => {
+                text.push_str(valid);
+                pending.clear();
+            }
+            Err(error) => {
+                let valid = error.valid_up_to();
+                text.push_str(std::str::from_utf8(&pending[..valid]).expect("valid UTF-8 prefix"));
+                pending.drain(..valid);
+                match error.error_len() {
+                    Some(n) => {
+                        text.push('?');
+                        pending.drain(..n);
+                    }
+                    None if flush => {
+                        text.push('?');
+                        pending.clear();
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+    text
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::decode_output;
+    #[test]
+    fn unicode_split_across_reads_and_invalid_bytes_stay_bounded() {
+        let mut pending = vec![b'a', 0xf0, 0x9f];
+        assert_eq!(decode_output(&mut pending, false), "a");
+        pending.extend_from_slice(&[0x8c, 0x8d, b'b', 0xff, 0xe2]);
+        assert_eq!(decode_output(&mut pending, false), "🌍b?");
+        assert_eq!(decode_output(&mut pending, true), "?");
+        assert!(pending.is_empty());
+    }
 }
 
 // Also reap descendants on timeout or cancellation, including descendants
@@ -164,8 +242,7 @@ impl Drop for ProcessGroup {
     }
 }
 
-pub async fn run_command(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, ToolFailure> {
-    let args: RunArgs = parse_args(args)?;
+async fn prepare(ctx: &ToolContext<'_>, args: &RunArgs) -> Result<PreparedCommand, ToolFailure> {
     let grant = ctx
         .app
         .config
@@ -271,6 +348,83 @@ pub async fn run_command(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutco
             "workspace was locked or removed while awaiting approval".into(),
         ));
     }
+    Ok(PreparedCommand {
+        grant: grant.clone(),
+        args: args.args.clone(),
+        program_sha256: crate::fsops::sha256_file(&program)
+            .map_err(|e| ToolFailure::Internal(e.to_string()))?
+            .0,
+        cwd: cwd.absolute,
+    })
+}
+
+pub async fn run_command(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, ToolFailure> {
+    let args: RunArgs = parse_args(args)?;
+    let prepared = prepare(ctx, &args).await?;
+    if args.background {
+        crate::jobs::start(ctx, prepared).await
+    } else {
+        execute(ctx, prepared, None).await
+    }
+}
+
+pub async fn execute(
+    ctx: &ToolContext<'_>,
+    prepared: PreparedCommand,
+    job_id: Option<&str>,
+) -> Result<ToolOutcome, ToolFailure> {
+    let grant = &prepared.grant;
+    let args = &prepared;
+    let cwd = ctx.resolve_existing(&grant.cwd.to_string_lossy())?;
+    ctx.check_read("run_command", &cwd)?;
+    let current = ctx
+        .app
+        .home
+        .load_config()
+        .map_err(|e| ToolFailure::Internal(e.to_string()))?;
+    if current
+        .workspace_commands
+        .get(&ctx.app.workspace.id())
+        .into_iter()
+        .flatten()
+        .find(|c| c.command_id == grant.command_id)
+        .map(|c| serde_json::to_value(c).unwrap_or_default())
+        != Some(serde_json::to_value(grant).unwrap_or_default())
+        || cwd.absolute != prepared.cwd
+        || !cwd.is_dir
+    {
+        return Err(ToolFailure::PermissionDenied(
+            "command grant or directory changed before execution".into(),
+        ));
+    }
+    let policy = ctx
+        .app
+        .store
+        .workspaces()
+        .map_err(|e| ToolFailure::Internal(e.to_string()))?
+        .into_iter()
+        .find(|w| w.id == ctx.app.workspace.id());
+    if policy.is_none_or(|w| w.read_only) {
+        return Err(ToolFailure::PermissionDenied(
+            "workspace locked or removed before execution".into(),
+        ));
+    }
+    grant
+        .validate()
+        .map_err(|e| ToolFailure::PermissionDenied(e.to_string()))?;
+    let program = grant
+        .program
+        .canonicalize()
+        .map_err(|e| ToolFailure::from_io("resolve command", e))?;
+    if crate::fsops::sha256_file(&program)
+        .map_err(|e| ToolFailure::Internal(e.to_string()))?
+        .0
+        != prepared.program_sha256
+    {
+        return Err(ToolFailure::PermissionDenied(
+            "approved executable changed before execution".into(),
+        ));
+    }
     ctx.app.audit_path_access(ctx.agent,ctx.session_id,"command.start",Some(cwd.display()),"allowed",
         &json!({"command_id":grant.command_id,"program":program,"args":args.args,"workspace_id":ctx.app.workspace.id()}).to_string())
         .map_err(|err|ToolFailure::Internal(err.to_string()))?;
@@ -307,6 +461,15 @@ pub async fn run_command(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutco
         .spawn()
         .map_err(|err| ToolFailure::from_io("start allowed command", err))?;
     let group = ProcessGroup(child.id().unwrap_or_default());
+    if let Some(id) = job_id {
+        ctx.app
+            .store
+            .update_job(id, |job| {
+                job.process_id = child.id();
+                Ok(())
+            })
+            .map_err(|e| ToolFailure::Internal(e.to_string()))?;
+    }
     let stdout = child
         .stdout
         .take()
@@ -319,8 +482,16 @@ pub async fn run_command(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutco
     let run = async {
         tokio::try_join!(
             child.wait(),
-            capture(stdout, budget.clone()),
-            capture(stderr, budget)
+            capture(
+                stdout,
+                budget.clone(),
+                job_id.map(|id| (ctx.app.store.clone(), id.to_string(), "stdout"))
+            ),
+            capture(
+                stderr,
+                budget,
+                job_id.map(|id| (ctx.app.store.clone(), id.to_string(), "stderr"))
+            )
         )
     };
     let result = tokio::time::timeout(Duration::from_secs(grant.timeout_secs), run).await;

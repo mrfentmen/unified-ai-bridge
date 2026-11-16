@@ -5,6 +5,44 @@ use serde_json::Value;
 pub const AUTO_CONNECT_KEY: &str = "uab_auto_connect";
 pub const EXTENSION_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// SQLite contains historical sessions. Only registrations observed by this
+/// background connection may appear as connected in the provider rail.
+pub fn refresh_live_sessions(live: &mut Vec<SessionView>, stored: Vec<SessionView>) {
+    let ids: std::collections::HashSet<_> = live.iter().map(|s| s.id.clone()).collect();
+    *live = stored.into_iter().filter(|s| ids.contains(&s.id)).collect();
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+    #[test]
+    fn historical_sessions_never_become_live_from_a_status_reply() {
+        let current = SessionView {
+            id: "current".into(),
+            tab_id: 1,
+            ..Default::default()
+        };
+        let old = SessionView {
+            id: "closed".into(),
+            tab_id: 2,
+            ..Default::default()
+        };
+        let mut live = vec![current.clone()];
+        refresh_live_sessions(&mut live, vec![old, current]);
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].id, "current");
+        live.clear();
+        refresh_live_sessions(
+            &mut live,
+            vec![SessionView {
+                id: "stored".into(),
+                ..Default::default()
+            }],
+        );
+        assert!(live.is_empty());
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionView {
     #[serde(default)]

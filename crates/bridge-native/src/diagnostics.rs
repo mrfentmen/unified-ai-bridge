@@ -111,6 +111,7 @@ pub fn collect(paths: &HomePaths) -> Vec<Check> {
     }
     checks.push(check_native_manifest(paths));
     checks.push(check_installed_binary(paths));
+    checks.push(check_signing(paths));
     checks.push(check_extension(paths));
     checks.push(check_chrome());
     checks.push(check_macos_permissions());
@@ -126,6 +127,58 @@ pub fn collect(paths: &HomePaths) -> Vec<Check> {
         detail: paths.logs_dir.join("native-host.log").display().to_string(),
     });
     checks
+}
+
+fn check_signing(paths: &HomePaths) -> Check {
+    if !cfg!(target_os = "macos") {
+        return Check {
+            name: "host signing".into(),
+            status: "note".into(),
+            detail: "macOS signing check is not applicable on this platform".into(),
+        };
+    }
+    let output = Command::new("/usr/bin/codesign")
+        .args(["-dv", "--verbose=2"])
+        .arg(paths.installed_binary())
+        .output();
+    match output {
+        Ok(output) => {
+            let text = String::from_utf8_lossy(&output.stderr);
+            let adhoc = text.contains("Signature=adhoc");
+            let detail = text
+                .lines()
+                .filter(|l| {
+                    l.starts_with("Identifier=")
+                        || l.starts_with("Authority=")
+                        || l.starts_with("TeamIdentifier=")
+                        || l.starts_with("Signature=")
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            Check {
+                name: "host signing".into(),
+                status: if output.status.success() && !adhoc {
+                    "ok"
+                } else {
+                    "note"
+                }
+                .into(),
+                detail: format!(
+                    "{detail}{}",
+                    if adhoc {
+                        "; ad-hoc identity cannot establish permission persistence after rebuilds; configure UAB_SIGNING_IDENTITY for deployment"
+                    } else {
+                        "; validate macOS permissions through the actual Chrome launch context"
+                    }
+                ),
+            }
+        }
+        Err(error) => Check {
+            name: "host signing".into(),
+            status: "note".into(),
+            detail: format!("signature could not be checked: {error}"),
+        },
+    }
 }
 
 fn check_platform() -> Check {

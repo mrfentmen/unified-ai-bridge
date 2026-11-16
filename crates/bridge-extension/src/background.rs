@@ -103,7 +103,7 @@ impl BgState {
             "active_id": self.details.get("active_id").cloned().unwrap_or_else(||json!("")),
             "workspaces": self.details.get("workspaces").cloned().unwrap_or_else(|| json!([])),
             "capabilities": self.details.get("capabilities").cloned().unwrap_or_default(),
-            "in_flight": self.pending_tools.len(),
+            "in_flight": self.pending_tools.len().max(self.details["in_flight"].as_u64().unwrap_or(0) as usize),
             "database_path": self.details.get("database_path").cloned().unwrap_or_else(||json!("")),
             "log_path": self.details.get("log_path").cloned().unwrap_or_else(||json!("")),
             "sessions": self.sessions.clone(),
@@ -174,6 +174,20 @@ enum BgRequest {
         command_id: String,
     },
     CommandList,
+    JobControl {
+        workspace_id: String,
+        action: Value,
+    },
+    Preflight,
+    CreateWriteGrant {
+        workspace_id: String,
+        grant: Value,
+    },
+    RevokeWriteGrant {
+        workspace_id: String,
+        session_id: String,
+    },
+    ListWriteGrants,
     ActivityDetail {
         activity_id: i64,
     },
@@ -185,8 +199,16 @@ enum BgRequest {
     },
     CommandPresets,
     BrowserDownloads,
-    ShareDownload { download_id: i32, workspace_id: String, session_id: String },
-    RevokeArtifact { artifact_id: String, workspace_id: String, session_id: String },
+    ShareDownload {
+        download_id: i32,
+        workspace_id: String,
+        session_id: String,
+    },
+    RevokeArtifact {
+        artifact_id: String,
+        workspace_id: String,
+        session_id: String,
+    },
     IntegrationList,
     IntegrationSave {
         server: Value,
@@ -222,6 +244,30 @@ pub async fn start() {
     );
     js::runtime_on_message_listener(&listener);
     KEEP.with(|keep| keep.borrow_mut().push(listener.into_js_value()));
+    let removed_state = state.clone();
+    let removed = Closure::<dyn FnMut(JsValue)>::new(move |tab: JsValue| {
+        if let Some(tab_id) = tab.as_f64().map(|n| n as i64) {
+            let ended: Vec<_> = removed_state
+                .borrow()
+                .sessions
+                .iter()
+                .filter(|s| s.tab_id == tab_id)
+                .map(|s| s.id.clone())
+                .collect();
+            removed_state
+                .borrow_mut()
+                .sessions
+                .retain(|s| s.tab_id != tab_id);
+            for id in ended {
+                let _ = send_native(
+                    &removed_state,
+                    json!({"type":"unregister_session","session_id":id}),
+                );
+            }
+        }
+    });
+    js::tabs_on_removed_listener(&removed);
+    KEEP.with(|keep| keep.borrow_mut().push(removed.into_js_value()));
 
     // Load the auto-connect preference without delaying listener registration.
     let settings_state = state.clone();
@@ -564,6 +610,7 @@ fn handle_message(
                     js::respond(&respond_fn, &json!({"ok":false,"error":err}));
                     return;
                 }
+                state.borrow_mut().sessions.retain(|s| s.id != session_id);
             }
             let promise = if action == "focus" {
                 js::update_tab(session.tab_id as i32, &js::to_js(&json!({"active":true})))
@@ -593,22 +640,29 @@ fn handle_message(
         }
         request @ (BgRequest::BrowserDownloads | BgRequest::ShareDownload { .. }) => {
             if !extension_control(&sender) {
-                js::respond(&respond_fn, &json!({"ok":false,"error":"Files must be explicitly selected in the extension controls."}));
+                js::respond(
+                    &respond_fn,
+                    &json!({"ok":false,"error":"Files must be explicitly selected in the extension controls."}),
+                );
                 return;
             }
             spawn_local(async move {
                 match request {
-                    BgRequest::BrowserDownloads => {
-                        match crate::artifacts::list().await {
-                            Ok(result) => js::respond(&respond_fn, &json!({"ok":true,"result":result})),
-                            Err(error) => js::respond(&respond_fn, &json!({"ok":false,"error":error})),
-                        }
+                    BgRequest::BrowserDownloads => match crate::artifacts::list().await {
+                        Ok(result) => js::respond(&respond_fn, &json!({"ok":true,"result":result})),
+                        Err(error) => js::respond(&respond_fn, &json!({"ok":false,"error":error})),
                     },
-                    BgRequest::ShareDownload { download_id, workspace_id, session_id } => {
-                        match crate::artifacts::selected(download_id).await {
-                            Ok(download) => send_panel_control(state, respond_fn, json!({"type":"register_artifact","workspace_id":workspace_id,"session_id":session_id,"download":download})),
-                            Err(error) => js::respond(&respond_fn, &json!({"ok":false,"error":error})),
-                        }
+                    BgRequest::ShareDownload {
+                        download_id,
+                        workspace_id,
+                        session_id,
+                    } => match crate::artifacts::selected(download_id).await {
+                        Ok(download) => send_panel_control(
+                            state,
+                            respond_fn,
+                            json!({"type":"register_artifact","workspace_id":workspace_id,"session_id":session_id,"download":download}),
+                        ),
+                        Err(error) => js::respond(&respond_fn, &json!({"ok":false,"error":error})),
                     },
                     _ => unreachable!(),
                 }
@@ -625,6 +679,11 @@ fn handle_message(
         | BgRequest::CommandGrant { .. }
         | BgRequest::CommandRevoke { .. }
         | BgRequest::CommandList
+        | BgRequest::JobControl { .. }
+        | BgRequest::Preflight
+        | BgRequest::CreateWriteGrant { .. }
+        | BgRequest::RevokeWriteGrant { .. }
+        | BgRequest::ListWriteGrants
         | BgRequest::ActivityDetail { .. }
         | BgRequest::RunTool { .. }
         | BgRequest::CommandPresets
@@ -641,7 +700,13 @@ fn handle_message(
                 return;
             }
             let message = match request {
-                BgRequest::RevokeArtifact { artifact_id, workspace_id, session_id } => json!({"type":"revoke_artifact","artifact_id":artifact_id,"workspace_id":workspace_id,"session_id":session_id}),
+                BgRequest::RevokeArtifact {
+                    artifact_id,
+                    workspace_id,
+                    session_id,
+                } => {
+                    json!({"type":"revoke_artifact","artifact_id":artifact_id,"workspace_id":workspace_id,"session_id":session_id})
+                }
                 BgRequest::WorkspaceList => json!({"type":"list_workspaces"}),
                 BgRequest::WorkspaceCreate {
                     label,
@@ -673,6 +738,22 @@ fn handle_message(
                     json!({"type":"revoke_command","command_id":command_id})
                 }
                 BgRequest::CommandList => json!({"type":"list_command_grants"}),
+                BgRequest::JobControl {
+                    workspace_id,
+                    action,
+                } => json!({"type":"job_control","workspace_id":workspace_id,"action":action}),
+                BgRequest::Preflight => json!({"type":"preflight"}),
+                BgRequest::CreateWriteGrant {
+                    workspace_id,
+                    grant,
+                } => json!({"type":"create_write_grant","workspace_id":workspace_id,"grant":grant}),
+                BgRequest::RevokeWriteGrant {
+                    workspace_id,
+                    session_id,
+                } => {
+                    json!({"type":"revoke_write_grant","workspace_id":workspace_id,"session_id":session_id})
+                }
+                BgRequest::ListWriteGrants => json!({"type":"list_write_grants"}),
                 BgRequest::ActivityDetail { activity_id } => {
                     json!({"type":"activity_detail","activity_id":activity_id})
                 }
@@ -703,21 +784,33 @@ fn handle_message(
 }
 
 fn extension_control(sender: &JsValue) -> bool {
-    js_sys::Reflect::get(sender, &JsValue::from_str("url")).ok()
-        .and_then(|value|value.as_string()).is_some_and(|url|url.starts_with(&js::extension_url("")))
+    js_sys::Reflect::get(sender, &JsValue::from_str("url"))
+        .ok()
+        .and_then(|value| value.as_string())
+        .is_some_and(|url| url.starts_with(&js::extension_url("")))
 }
 
-fn send_panel_control(state: Rc<RefCell<BgState>>, respond_fn: js_sys::Function, mut message: Value) {
+fn send_panel_control(
+    state: Rc<RefCell<BgState>>,
+    respond_fn: js_sys::Function,
+    mut message: Value,
+) {
     let key = format!("panel-{:016x}", js::random_u64());
     message["request_key"] = key.clone().into();
-    state.borrow_mut().pending_controls.insert(key.clone(), respond_fn.clone());
+    state
+        .borrow_mut()
+        .pending_controls
+        .insert(key.clone(), respond_fn.clone());
     if let Err(err) = send_native(&state, message) {
         state.borrow_mut().pending_controls.remove(&key);
         js::respond(&respond_fn, &json!({"ok":false,"error":err}));
     }
     js::schedule(245_000, move || {
         if let Some(respond) = state.borrow_mut().pending_controls.remove(&key) {
-            js::respond(&respond, &json!({"ok":false,"code":"request_timeout","error":"Operation timed out. Inspect activity and files before retrying a mutation."}));
+            js::respond(
+                &respond,
+                &json!({"ok":false,"code":"request_timeout","error":"Operation timed out. Inspect activity and files before retrying a mutation."}),
+            );
         }
     });
 }
@@ -956,13 +1049,10 @@ fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
             let tab_id = session.tab_id;
             {
                 let mut state = state.borrow_mut();
-                if !state
+                state
                     .sessions
-                    .iter()
-                    .any(|existing| existing.id == session.id)
-                {
-                    state.sessions.push(session.clone());
-                }
+                    .retain(|existing| existing.tab_id != session.tab_id);
+                state.sessions.insert(0, session.clone());
             }
             let Some(respond) = state.borrow_mut().pending_registers.remove(&tab_id) else {
                 return;
@@ -1149,7 +1239,7 @@ fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
                 .cloned()
                 .and_then(|sessions| serde_json::from_value::<Vec<SessionView>>(sessions).ok())
             {
-                state.sessions = sessions;
+                crate::model::refresh_live_sessions(&mut state.sessions, sessions);
             }
             if let Some(activity) = value
                 .get("recent_activity")
@@ -1182,10 +1272,10 @@ fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
                     state.details["active_id"] = value["workspace_id"].clone();
                     state.details["workspaces"] = value["workspaces"].clone();
                     state.details["capabilities"] = value["capabilities"].clone();
-                    state.sessions = sessions.clone();
+                    crate::model::refresh_live_sessions(&mut state.sessions, sessions.clone());
                 }
                 let mut tabs = std::collections::HashSet::new();
-                for session in sessions {
+                for session in state.borrow().sessions.clone() {
                     if tabs.insert(session.tab_id) {
                         js::send_to_tab(
                             session.tab_id as i32,
