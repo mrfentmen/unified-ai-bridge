@@ -2,6 +2,22 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## Git inspection candidate 0.5.10 — November 16, 2026
+
+The source and isolated package are 0.5.10. The normal Chrome package and installed host remain 0.5.7; no new browser result is claimed.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 151 passed, 0 failed; one deliberately slow test excluded from the routine run |
+| Seven Git tests | Real staged/unstaged differences; private-path denial; unchanged index; unrelated edits preserved; literal filenames; metadata/config boundaries; blocked external filters; count/byte limits |
+| Intel search correction | 0.5.9 CI run 43934903095 failed the 100-file search assertion on Intel macOS: repeated private-policy compilation consumed the two-second budget. 0.5.10 compiles policy once per call while still resolving/checking every path. All five navigation checks pass locally; Intel CI confirmation is pending |
+| Isolated package | Pinned WASM/native/tooling release builds exited 0. Source/package/manifest and installed native version all 0.5.10; normal package remains 0.5.7 |
+| Native transport | Actual installed host returned 0.5.10/protocol 6; staged diff of copied recovery.rs contained the new line, private selection/traversal were denied, branch was main, index and unrelated file hashes were unchanged |
+| Installed checks | 41 self-tests passed; doctor passed config, binary/manifest, SQLite and 13 matching audit entries |
+| Browser gate | Current Browser connector remains unavailable; new Git/recovery/navigation UI acceptance remains pending |
+
+Native binary SHA-256: `dfe0e751573645a8ab676b1612a8787e2fe8be8b7f093803ed3c6fc328fbd77e`. Raw evidence is in ignored `docs/evidence/0.5.10/`; see [Git behavior](GIT.md). This candidate implements reads only; the UAB-10 commit workflow remains open.
+
 ## Code navigation candidate 0.5.9 — November 16, 2026
 
 The source and isolated package are 0.5.9; the normal Chrome package/host remain 0.5.7. No live Chrome or provider acceptance is claimed for this candidate.
@@ -20,6 +36,7 @@ The source and isolated package are 0.5.9; the normal Chrome package/host remain
 | Native transport | Real framed calls parsed a copy of the project’s recovery.rs: 21 declarations, every reported line checked against source. Search pages returned lines 224, 411, 446, 453, 459. A changed file and unsupported TypeScript returned explicit errors |
 | Installed checks | 41 self-tests passed; doctor passed SQLite, installed binary/manifest and 15 matching audit entries |
 | Previous candidate CI | 0.5.8 run 43931890870 passed Linux/Intel macOS tests and Intel packaging |
+| Subsequent CI finding | 0.5.9 run 43934903095 passed Linux tests but failed Intel macOS's 100-file search assertion (0 files scanned before timeout). See the 0.5.10 correction above; the earlier local pass did not establish Intel behavior |
 
 The five dedicated navigation checks are part of the workspace total. Raw outputs are kept in ignored `docs/evidence/0.5.9/`. `list_symbols` is a syntax declaration reader, not semantic `find_references`; that part of UAB-09 remains pending along with live UI acceptance.
 

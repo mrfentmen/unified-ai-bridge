@@ -1,4 +1,3 @@
-use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -8,22 +7,6 @@ use tokio::process::Command;
 
 use crate::failure::ToolFailure;
 use crate::tools::{parse_args, ToolContext, ToolOutcome};
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GitPathArgs {
-    #[serde(default)]
-    path: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DiffArgs {
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
-    staged: bool,
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,118 +21,16 @@ struct TestArgs {
 }
 
 pub async fn git_status(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, ToolFailure> {
-    let args: GitPathArgs = parse_args(args)?;
-    let repo = resolve_repo(ctx, args.path.as_deref())?;
-    ctx.check_read("git_status", &repo)?;
-    let output = run_git(
-        &repo.absolute,
-        &["status", "--porcelain=v1", "-b", "--untracked-files=all"],
-        64 * 1024,
-    )
-    .await?;
-    let display = format!(
-        "Repository: {}\n\n{}",
-        repo.display(),
-        if output.trim().is_empty() {
-            "(clean)"
-        } else {
-            output.trim_end()
-        }
-    );
-    Ok(ToolOutcome::read(
-        format!("git status for {}", repo.display()),
-        display,
-        Some(repo.display()),
-    ))
+    super::git::status(ctx, args).await
 }
-
 pub async fn git_diff(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, ToolFailure> {
-    let args: DiffArgs = parse_args(args)?;
-    let repo = resolve_repo(ctx, args.path.as_deref())?;
-    ctx.check_read("git_diff", &repo)?;
-    let mut command_args = vec!["diff", "--no-ext-diff", "--no-color"];
-    if args.staged {
-        command_args.push("--cached");
-    }
-    let output = run_git(&repo.absolute, &command_args, 60_000).await?;
-    let stat = run_git(
-        &repo.absolute,
-        &["diff", "--no-ext-diff", "--stat", "--no-color"],
-        16_000,
-    )
-    .await?;
-    let body = if output.trim().is_empty() {
-        "(no unstaged changes)".to_string()
-    } else {
-        output
-    };
-    Ok(ToolOutcome::read(
-        format!("git diff for {}", repo.display()),
-        format!(
-            "Repository: {}\n\nSummary:\n{}\n\nDiff:\n{}",
-            repo.display(),
-            stat.trim_end(),
-            body
-        ),
-        Some(repo.display()),
-    ))
+    super::git::diff(ctx, args).await
 }
-
 pub async fn inspect_repository(
     ctx: &ToolContext<'_>,
     args: Value,
 ) -> Result<ToolOutcome, ToolFailure> {
-    let args: GitPathArgs = parse_args(args)?;
-    let repo = resolve_repo(ctx, args.path.as_deref())?;
-    ctx.check_read("inspect_repository", &repo)?;
-    let branch = run_git(
-        &repo.absolute,
-        &["rev-parse", "--abbrev-ref", "HEAD"],
-        8_000,
-    )
-    .await
-    .unwrap_or_else(|_| "(unknown)".into());
-    let status = run_git(&repo.absolute, &["status", "--porcelain=v1"], 32_000).await?;
-    let mut top = Vec::new();
-    for entry in std::fs::read_dir(&repo.absolute)
-        .map_err(|err| ToolFailure::Io(format!("read repository directory: {err}")))?
-        .flatten()
-    {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name == ".git" {
-            continue;
-        }
-        let kind = if entry.path().is_dir() { "dir" } else { "file" };
-        top.push(format!("{name} ({kind})"));
-    }
-    top.sort();
-    let readme = ["README.md", "README.txt", "readme.md"]
-        .iter()
-        .map(|name| repo.absolute.join(name))
-        .find(|path| path.is_file());
-    let readme_excerpt = readme
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .map(|text| text.chars().take(2000).collect::<String>())
-        .unwrap_or_else(|| "(no README found)".into());
-    let output = format!(
-        "Repository: {}\nBranch: {}\nWorking tree: {}\n\nTop-level entries:\n{}\n\nREADME excerpt:\n{}",
-        repo.display(),
-        branch.trim(),
-        if status.trim().is_empty() { "clean" } else { "has changes" },
-        top.join("\n"),
-        readme_excerpt
-    );
-    Ok(ToolOutcome::read(
-        format!("inspected repository {}", repo.display()),
-        output,
-        Some(repo.display()),
-    )
-    .with_data(serde_json::json!({
-        "path": repo.display(),
-        "branch": branch.trim(),
-        "clean": status.trim().is_empty(),
-        "entries": top,
-    })))
+    super::git::inspect(ctx, args).await
 }
 
 pub async fn run_approved_script(
@@ -305,70 +186,6 @@ pub async fn inspect_test_results(
     ))
 }
 
-fn resolve_repo(
-    ctx: &ToolContext<'_>,
-    raw: Option<&str>,
-) -> Result<crate::sandbox::ResolvedPath, ToolFailure> {
-    let candidate = raw
-        .map(str::to_string)
-        .unwrap_or_else(|| ctx.agent.workspace_relative());
-    let path = ctx.resolve_existing(&candidate)?;
-    if !path.is_dir {
-        return Err(ToolFailure::InvalidArguments(
-            "repository path must be a folder".into(),
-        ));
-    }
-    ctx.check_read("git", &path)?;
-    // Refuse a repository that reaches outside the approved workspace, and do
-    // not allow .git files to be treated as repository paths.
-    if !path.absolute.starts_with(ctx.workspace_root()) {
-        return Err(ToolFailure::PermissionDenied(
-            "repository must be inside the workspace".into(),
-        ));
-    }
-    Ok(path)
-}
-
-async fn run_git(repo: &Path, args: &[&str], max_bytes: usize) -> Result<String, ToolFailure> {
-    let mut command = Command::new("/usr/bin/git");
-    command
-        .arg("-C")
-        .arg(repo)
-        .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    let child = command
-        .spawn()
-        .map_err(|err| ToolFailure::Unsupported(format!("git is unavailable: {err}")))?;
-    let output = match tokio::time::timeout(Duration::from_secs(15), child.wait_with_output()).await
-    {
-        Ok(Ok(output)) => output,
-        Ok(Err(err)) => return Err(ToolFailure::Io(format!("git failed: {err}"))),
-        Err(_) => return Err(ToolFailure::Io("git command timed out".into())),
-    };
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ToolFailure::Unsupported(format!(
-            "git {} failed: {}",
-            args.join(" "),
-            stderr.trim()
-        )));
-    }
-    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
-    if text.len() > max_bytes {
-        let mut boundary = max_bytes;
-        while !text.is_char_boundary(boundary) {
-            boundary -= 1;
-        }
-        text.truncate(boundary);
-        text.push_str("\n[git output truncated]");
-    }
-    Ok(text)
-}
-
 fn count_xml_attr(text: &str, attribute: &str) -> usize {
     let needle = format!("{attribute}=");
     let mut total = 0usize;
@@ -387,6 +204,3 @@ fn count_xml_attr(text: &str, attribute: &str) -> usize {
     }
     total
 }
-
-#[allow(dead_code)]
-fn _pathbuf(_: PathBuf) {}

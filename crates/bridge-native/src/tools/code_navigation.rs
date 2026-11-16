@@ -72,6 +72,9 @@ pub async fn search(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, T
     if !(1..=100).contains(&limit) {
         return Err(invalid("max_results must be 1–100"));
     }
+    // Compile the unchanged read policy once for this call. Never cache paths
+    // or policy across calls/workspace changes.
+    let sandbox = ctx.app.sandbox();
     let end = Instant::now() + Duration::from_secs(2);
     let mut files = std::collections::BTreeSet::new();
     let nodes = std::cell::Cell::new(0usize);
@@ -103,8 +106,12 @@ pub async fn search(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, T
             e.path()
                 .strip_prefix(ctx.workspace_root())
                 .ok()
-                .and_then(|r| ctx.resolve_any(&r.to_string_lossy()).ok())
-                .is_some_and(|p| ctx.app.decide(ctx.agent, Access::Read, &p) == Decision::Allow)
+                .and_then(|r| {
+                    sandbox
+                        .resolve(&r.to_string_lossy(), crate::sandbox::Existence::Any)
+                        .ok()
+                })
+                .is_some_and(|p| sandbox.decide(ctx.agent, Access::Read, &p) == Decision::Allow)
         })
     {
         if tree_budget.get() || Instant::now() >= end {
@@ -160,7 +167,17 @@ pub async fn search(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, T
             });
             break;
         }
-        let bytes = match binary::read_source(ctx, "search_files", &path, FILE_BYTES) {
+        let read = sandbox
+            .resolve(&path, crate::sandbox::Existence::MustExist)
+            .and_then(|p| {
+                if sandbox.decide(ctx.agent, Access::Read, &p) != Decision::Allow {
+                    return Err(ToolFailure::PermissionDenied(
+                        "search file is protected".into(),
+                    ));
+                }
+                binary::read_resolved(&p, FILE_BYTES)
+            });
+        let bytes = match read {
             Ok(b) => b,
             Err(e) => {
                 if args.cursor.as_ref().is_some_and(|c| c.path == path) {

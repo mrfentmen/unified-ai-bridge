@@ -6,6 +6,8 @@ In **Files, preview and restore → Code navigation**, enter a folder and query 
 
 These controls have built successfully but are not yet verified in a live Chrome session. The normal browser package remains 0.5.7; 0.5.9 is an isolated candidate.
 
+Intel CI later exposed excessive repeated policy compilation during search in 0.5.9. The 0.5.10 candidate reuses the compiled policy within a single call while recomputing path resolution for every file. It never caches policy across calls or workspace switches. The local five-check navigation suite passes; Intel confirmation is pending.
+
 ## Literal search
 
 `search_files {query, path?, max_results?, cursor?}` returns structured matches with `path`, `line`, `excerpt` and the file's `sha256`. Matching is case-insensitive literal text. Use the hash when preparing a patch; inspect each caller before changing it.

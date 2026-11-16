@@ -56,6 +56,12 @@ pub(super) fn read_source(
 ) -> Result<Vec<u8>, ToolFailure> {
     let path = ctx.resolve_existing(raw)?;
     ctx.check_read(tool, &path)?;
+    read_resolved(&path, limit)
+}
+
+/// The caller must have checked read policy for this resolved path. Ancestor
+/// descriptors, leaf type and byte limits are still checked on every read.
+pub(super) fn read_resolved(path: &ResolvedPath, limit: u64) -> Result<Vec<u8>, ToolFailure> {
     if path.relative.components().any(|p| {
         p.as_os_str()
             .to_string_lossy()

@@ -512,6 +512,8 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let zip_destination = RwSignal::new(String::new());
     let zip_files = RwSignal::new("[]".to_string());
     let zip_hash = RwSignal::new(String::new());
+    let git_path=RwSignal::new(String::new());
+    let git_files=RwSignal::new("[]".to_string());
     let code_path=RwSignal::new(String::new());
     let code_query=RwSignal::new(String::new());
     let code_cursor=RwSignal::new(serde_json::Value::Null);
@@ -649,6 +651,15 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <button style=CONTROL_STYLE disabled=move||busy.get()||zip_hash.get().is_empty()||zip_destination.get().is_empty() on:click=move |_|execute("extract_archive".into(),json!({"path":zip_path.get(),"destination":zip_destination.get(),"expected_sha256":zip_hash.get()}))>"Request ZIP extraction"</button>
                     <textarea aria-label="Archive source paths JSON" style=CONTROL_STYLE rows="3" placeholder="[\"files/main.rs\",\"notes/readme.md\"]" prop:value=move||zip_files.get() on:input=move|ev|zip_files.set(event_target_value(&ev))></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||zip_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&zip_files.get()){Ok(paths)=>execute("create_archive".into(),json!({"paths":paths,"destination":zip_destination.get()})),Err(err)=>error.set(Some(format!("Invalid file list JSON: {err}")))}}>"Request ZIP creation"</button>
+                </details>
+                <details><summary>"Inspect local Git changes"</summary>
+                    <p>"Select an ordinary repository root. Protected paths are omitted; external filters are disabled. These controls read status and differences only."</p>
+                    <input aria-label="Git repository path" style=CONTROL_STYLE placeholder=". (workspace root)" prop:value=move||git_path.get() on:input=move|ev|git_path.set(event_target_value(&ev))/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("git_status".into(),json!({"path":git_path.get()}))>"Inspect Git status"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("inspect_repository".into(),json!({"path":git_path.get()}))>"Inspect repository"</button>
+                    <textarea aria-label="Git file selection JSON" style=CONTROL_STYLE rows="2" prop:value=move||git_files.get() on:input=move|ev|git_files.set(event_target_value(&ev))></textarea>
+                    <p>"Optional workspace-relative file list; [] selects visible changed paths."</p>
+                    {[false,true].into_iter().map(move|staged|view!{<button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{match serde_json::from_str::<Vec<String>>(&git_files.get()){Ok(files)=>{let mut args=json!({"path":git_path.get(),"staged":staged});if !files.is_empty(){args["files"]=json!(files);}execute("git_diff".into(),args);},Err(err)=>error.set(Some(format!("Invalid Git file selection: {err}")))}}>{if staged{"Inspect staged Git diff"}else{"Inspect unstaged Git diff"}}</button>}).collect_view()}
                 </details>
                 <details><summary>"Code navigation"</summary>
                     <p>"Search a folder for literal matches, or list syntax declarations in one Rust file. Other languages use text search. These are reference candidates, not semantic rename results."</p>

@@ -330,7 +330,7 @@ pub const TOOLS: &[ToolSpec] = &[
     ToolSpec {
         name: "git_status",
         category: Category::Development,
-        description: "Run fixed-argument git status inside a Git repository contained in the workspace. No shell.",
+        description: "Inspect a bounded ordinary local Git repository with protected paths omitted. No parent discovery, linked worktrees, config includes, alternates, external filters, hooks or network. General/code default to workspace root.",
         arguments: "path? (repository path)",
         schema: r#"{"type":"object","properties":{"path":{"type":"string"}},"additionalProperties":false}"#,
         writes: false,
@@ -338,9 +338,9 @@ pub const TOOLS: &[ToolSpec] = &[
     ToolSpec {
         name: "git_diff",
         category: Category::Development,
-        description: "Run fixed-argument git diff inside a workspace repository. Returns a bounded diff. No shell.",
-        arguments: "path?, staged? (default false)",
-        schema: r#"{"type":"object","properties":{"path":{"type":"string"},"staged":{"type":"boolean"}},"additionalProperties":false}"#,
+        description: "Inspect staged or unstaged differences for permitted files in an ordinary local repository. Optional files are workspace-relative. External filters/textconv disabled, private paths omitted, oversized diffs refused rather than silently truncated.",
+        arguments: "path?, staged? (default false), files? (1–100 workspace-relative paths)",
+        schema: r#"{"type":"object","properties":{"path":{"type":"string"},"staged":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":100}},"additionalProperties":false}"#,
         writes: false,
     },
     ToolSpec {

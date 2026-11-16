@@ -8,6 +8,7 @@ pub mod commands;
 pub mod desktop;
 pub mod development;
 pub mod code_navigation;
+pub mod git;
 pub mod file_extra;
 pub mod filesystem;
 pub mod recovery;
@@ -548,6 +549,9 @@ pub async fn dispatch(
             if matches!(
                 tool,
                 "preview_document"
+                    | "git_status"
+                    | "git_diff"
+                    | "inspect_repository"
                     | "list_symbols"
                     | "search_files"
                     | "list_archive"
