@@ -8,12 +8,12 @@ use crate::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, Instant},
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::Command,
 };
 fn invalid(s: impl Into<String>) -> ToolFailure {
@@ -41,14 +41,17 @@ struct DiffArgs {
     #[serde(default)]
     files: Option<Vec<String>>,
 }
-struct Repo {
-    path: ResolvedPath,
+pub(super) struct Repo {
+    pub(super) path: ResolvedPath,
     git: PathBuf,
     disabled: Vec<String>,
     policy: Sandbox,
 }
 impl Repo {
-    async fn open(ctx: &ToolContext<'_>, raw: Option<&str>) -> Result<Self, ToolFailure> {
+    pub(super) async fn open(
+        ctx: &ToolContext<'_>,
+        raw: Option<&str>,
+    ) -> Result<Self, ToolFailure> {
         let default = if ctx.app.workspace.profile == bridge_core::workspace::Profile::Research {
             ctx.agent.workspace_relative()
         } else {
@@ -179,7 +182,17 @@ impl Repo {
         }
         Ok(repo)
     }
-    async fn run(&self, args: &[&str], limit: usize) -> Result<Vec<u8>, ToolFailure> {
+    pub(super) async fn run(&self, args: &[&str], limit: usize) -> Result<Vec<u8>, ToolFailure> {
+        self.run_input(args, limit, None, None, None).await
+    }
+    pub(super) async fn run_input(
+        &self,
+        args: &[&str],
+        limit: usize,
+        input: Option<&[u8]>,
+        index: Option<&Path>,
+        date: Option<&str>,
+    ) -> Result<Vec<u8>, ToolFailure> {
         let mut command = Command::new("/usr/bin/git");
         command
             .env_clear()
@@ -202,11 +215,28 @@ impl Repo {
             "diff.orderFile=/dev/null",
             "submodule.recurse=false",
             "diff.renames=false",
+            "gc.auto=0",
+            "maintenance.auto=false",
+            "core.splitIndex=false",
+            "core.sparseCheckout=false",
+            "commit.gpgSign=false",
         ] {
             command.arg("-c").arg(item);
         }
         for item in &self.disabled {
             command.arg("-c").arg(item);
+        }
+        if let Some(index) = index {
+            command.env("GIT_INDEX_FILE", index);
+        }
+        if let Some(date) = date {
+            command
+                .env("GIT_AUTHOR_NAME", "Unified AI Bridge")
+                .env("GIT_AUTHOR_EMAIL", "bridge@localhost")
+                .env("GIT_COMMITTER_NAME", "Unified AI Bridge")
+                .env("GIT_COMMITTER_EMAIL", "bridge@localhost")
+                .env("GIT_AUTHOR_DATE", date)
+                .env("GIT_COMMITTER_DATE", date);
         }
         command
             .arg("--git-dir")
@@ -216,7 +246,11 @@ impl Repo {
             .arg("-C")
             .arg(&self.path.absolute)
             .args(args)
-            .stdin(Stdio::null())
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
@@ -233,8 +267,17 @@ impl Repo {
             .stderr
             .take()
             .ok_or_else(|| io("Git stderr missing"))?;
+        let stdin = child.stdin.take();
         let result = tokio::time::timeout(Duration::from_secs(15), async {
-            let (out, err) = tokio::try_join!(bounded(stdout, limit), bounded(stderr, 8192))?;
+            let feed = async {
+                if let (Some(mut stdin), Some(input)) = (stdin, input) {
+                    stdin.write_all(input).await.map_err(io)?;
+                    stdin.shutdown().await.map_err(io)?;
+                }
+                Ok::<(), ToolFailure>(())
+            };
+            let (out, err, _) =
+                tokio::try_join!(bounded(stdout, limit), bounded(stderr, 8192), feed)?;
             let status = child.wait().await.map_err(io)?;
             if !status.success() {
                 return Err(unsupported(format!(
@@ -262,7 +305,7 @@ impl Repo {
             }
         }
     }
-    fn readable(&self, ctx: &ToolContext<'_>, raw: &str) -> Option<String> {
+    pub(super) fn readable(&self, ctx: &ToolContext<'_>, raw: &str) -> Option<String> {
         if raw.is_empty() || raw.len() > 2048 || raw.chars().any(char::is_control) {
             return None;
         }

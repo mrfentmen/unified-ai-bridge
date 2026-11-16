@@ -2,6 +2,23 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## Reviewed Git commit candidate 0.5.11 — November 16, 2026
+
+The source and isolated package are 0.5.11. The normal Chrome package and native installation remain 0.5.7; these are host/transport checks, not live website acceptance.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 161 passed, 0 failed; one long-duration test excluded from the routine suite and separately passed on 0.5.10 |
+| Ten commit/history tests | Approved working-file bytes committed on a new branch; staged bytes, HEAD and unrelated edits preserved; denial/stale/hash/HEAD/lock/owner/expiry paths refused; no filters/hooks/signing; protected historical reads; interrupted/failed publication retained receipts; parent-file and symbolic-ref conflicts refused |
+| Isolated release package | WASM/native/tooling builds exited 0; source/package/manifest/native versions all 0.5.11 |
+| Packaged Native Messaging | Denied commit created no branch. Approved commit included exactly src/recovery.rs and docs/[reviewed].md, with matching bytes. HEAD, user's index and unrelated draft hashes were unchanged |
+| Restart and replay | Terminated/restarted the installed test host; status and repeated apply returned the original commit ID, without another commit |
+| History | git_log returned the actual new commit; git_show returned matching source content; private selections/traversal were denied |
+| Installed checks | 41 self-tests passed; doctor passed config/binary/manifest/SQLite and 34 matching audit entries |
+| Browser | New controls compiled but remain unverified in Chrome because the current Browser connection is unavailable |
+
+The disposable repository commit is `68cd37a8807f806ed871373cce52be5a1d511603`, based on preserved HEAD `a506751e56967cff56d8a207249afa8c0471854b`. Installed binary SHA-256: `1830501d0dcea751caa5885d0982ab1fc29ea337003df640fa0ae229bc67a2cc`. Raw outputs are in ignored `docs/evidence/0.5.11/`. [Workflow and supported subset](GIT.md).
+
 ## Git inspection candidate 0.5.10 — November 16, 2026
 
 The source and isolated package are 0.5.10. The normal Chrome package and installed host remain 0.5.7; no new browser result is claimed.
@@ -9,6 +26,7 @@ The source and isolated package are 0.5.10. The normal Chrome package and instal
 | Check | Observed result |
 |---|---|
 | Workspace suite | 151 passed, 0 failed; one deliberately slow test excluded from the routine run |
+| Long-command acceptance | Separately ran the ignored real Cargo job: completed with exit 0 after 249.608 seconds, with saved output read through reopened host state. The test itself slept 245 seconds. This proves duration/recovery handling, not unattended browser task orchestration |
 | Seven Git tests | Real staged/unstaged differences; private-path denial; unchanged index; unrelated edits preserved; literal filenames; metadata/config boundaries; blocked external filters; count/byte limits |
 | Intel search correction | 0.5.9 CI run 43934903095 failed the 100-file search assertion on Intel macOS: repeated private-policy compilation consumed the two-second budget. 0.5.10 compiles policy once per call while still resolving/checking every path. All five navigation checks pass locally; Intel CI confirmation is pending |
 | Isolated package | Pinned WASM/native/tooling release builds exited 0. Source/package/manifest and installed native version all 0.5.10; normal package remains 0.5.7 |

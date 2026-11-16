@@ -514,6 +514,11 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let zip_hash = RwSignal::new(String::new());
     let git_path=RwSignal::new(String::new());
     let git_files=RwSignal::new("[]".to_string());
+    let git_branch=RwSignal::new("bridge/reviewed-change".to_string());
+    let git_message=RwSignal::new(String::new());
+    let git_review=RwSignal::new(String::new());
+    let git_commit=RwSignal::new(String::new());
+    let git_historical_file=RwSignal::new(String::new());
     let code_path=RwSignal::new(String::new());
     let code_query=RwSignal::new(String::new());
     let code_cursor=RwSignal::new(serde_json::Value::Null);
@@ -541,6 +546,8 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             patch_id.set(String::new());
             patch_preview_json.set(String::new());
             patch_session.set(String::new());
+            git_review.set(String::new());
+            git_commit.set(String::new());
             zip_hash.set(String::new());
             image_hash.set(String::new());
             code_cursor.set(serde_json::Value::Null);symbol_offset.set(None);symbol_hash.set(String::new());
@@ -594,6 +601,8 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     }
                     if value["status"]=="ok" && name=="search_files"{code_cursor.set(value["data"]["next_cursor"].clone());}
                     if value["status"]=="ok" && name=="list_symbols"{symbol_offset.set(value["data"]["next_offset"].as_u64());symbol_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());}
+                    if value["status"]=="ok" && name=="preview_git_commit"{git_review.set(value["data"]["review_id"].as_str().unwrap_or_default().into());}
+                    if value["status"]=="ok" && name=="git_log"{git_commit.set(value["data"]["base_commit"].as_str().unwrap_or_default().into());}
                     if value["status"]=="ok" && name=="calculate_sha256" {
                         let hash=value["data"]["sha256"].as_str().unwrap_or_default().to_string();
                         if args["path"].as_str()==Some(binary_source.get_untracked().as_str()){binary_source_hash.set(hash.clone());}
@@ -653,13 +662,24 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <button style=CONTROL_STYLE disabled=move||busy.get()||zip_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&zip_files.get()){Ok(paths)=>execute("create_archive".into(),json!({"paths":paths,"destination":zip_destination.get()})),Err(err)=>error.set(Some(format!("Invalid file list JSON: {err}")))}}>"Request ZIP creation"</button>
                 </details>
                 <details><summary>"Inspect local Git changes"</summary>
-                    <p>"Select an ordinary repository root. Protected paths are omitted; external filters are disabled. These controls read status and differences only."</p>
+                    <p>"Select an ordinary repository root. Protected paths are omitted; external filters are disabled. Review working files before requesting a commit on a new branch."</p>
                     <input aria-label="Git repository path" style=CONTROL_STYLE placeholder=". (workspace root)" prop:value=move||git_path.get() on:input=move|ev|git_path.set(event_target_value(&ev))/>
                     <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("git_status".into(),json!({"path":git_path.get()}))>"Inspect Git status"</button>
                     <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("inspect_repository".into(),json!({"path":git_path.get()}))>"Inspect repository"</button>
                     <textarea aria-label="Git file selection JSON" style=CONTROL_STYLE rows="2" prop:value=move||git_files.get() on:input=move|ev|git_files.set(event_target_value(&ev))></textarea>
                     <p>"Optional workspace-relative file list; [] selects visible changed paths."</p>
                     {[false,true].into_iter().map(move|staged|view!{<button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{match serde_json::from_str::<Vec<String>>(&git_files.get()){Ok(files)=>{let mut args=json!({"path":git_path.get(),"staged":staged});if !files.is_empty(){args["files"]=json!(files);}execute("git_diff".into(),args);},Err(err)=>error.set(Some(format!("Invalid Git file selection: {err}")))}}>{if staged{"Inspect staged Git diff"}else{"Inspect unstaged Git diff"}}</button>}).collect_view()}
+                    <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("git_log".into(),json!({"path":git_path.get(),"limit":10}))>"Read recent commits"</button>
+                    <input aria-label="Historical commit ID" style=CONTROL_STYLE placeholder="Full commit ID from history" prop:value=move||git_commit.get() on:input=move|ev|git_commit.set(event_target_value(&ev))/>
+                    <input aria-label="Historical file path" style=CONTROL_STYLE placeholder="Workspace-relative file" prop:value=move||git_historical_file.get() on:input=move|ev|git_historical_file.set(event_target_value(&ev))/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||git_commit.get().is_empty()||git_historical_file.get().is_empty() on:click=move |_|execute("git_show".into(),json!({"path":git_path.get(),"commit":git_commit.get(),"file":git_historical_file.get()}))>"Read historical file"</button>
+                    <input aria-label="New review branch" style=CONTROL_STYLE prop:value=move||git_branch.get() on:input=move|ev|git_branch.set(event_target_value(&ev))/>
+                    <textarea aria-label="Commit message" style=CONTROL_STYLE rows="2" placeholder="Commit message" prop:value=move||git_message.get() on:input=move|ev|git_message.set(event_target_value(&ev))></textarea>
+                    <p>"Commit the selected working-file bytes on a new bridge/ branch. Current branch, staging area and working files stay unchanged. Author: Unified AI Bridge. Nothing is pushed."</p>
+                    <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{git_review.set(String::new());match serde_json::from_str::<Vec<String>>(&git_files.get()){Ok(files)=>execute("preview_git_commit".into(),json!({"path":git_path.get(),"files":files,"branch":git_branch.get(),"message":git_message.get()})),Err(err)=>error.set(Some(format!("Invalid Git file selection: {err}")))}}>"Preview new-branch commit"</button>
+                    <input aria-label="Saved Git review ID" style=CONTROL_STYLE placeholder="Saved review ID" prop:value=move||git_review.get() on:input=move|ev|git_review.set(event_target_value(&ev))/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||git_review.get().is_empty() on:click=move |_|execute("apply_git_commit".into(),json!({"review_id":git_review.get()}))>"Request approval for saved commit"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||git_review.get().is_empty() on:click=move |_|execute("git_commit_status".into(),json!({"review_id":git_review.get()}))>"Inspect commit receipt"</button>
                 </details>
                 <details><summary>"Code navigation"</summary>
                     <p>"Search a folder for literal matches, or list syntax declarations in one Rust file. Other languages use text search. These are reference candidates, not semantic rename results."</p>

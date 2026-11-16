@@ -9,6 +9,7 @@ pub mod desktop;
 pub mod development;
 pub mod code_navigation;
 pub mod git;
+pub mod git_review;
 pub mod file_extra;
 pub mod filesystem;
 pub mod recovery;
@@ -527,6 +528,11 @@ pub async fn dispatch(
         "submit_peer_review" => collaboration::submit_peer_review(&context, arguments).await,
         "record_disagreement" => collaboration::record_disagreement(&context, arguments).await,
         "git_status" => development::git_status(&context, arguments).await,
+        "preview_git_commit" => git_review::preview(&context, arguments).await,
+        "apply_git_commit" => git_review::apply(&context, arguments).await,
+        "git_commit_status" => git_review::status(&context, arguments).await,
+        "git_log" => git_review::log(&context, arguments).await,
+        "git_show" => git_review::show(&context, arguments).await,
         "git_diff" => development::git_diff(&context, arguments).await,
         "inspect_repository" => development::inspect_repository(&context, arguments).await,
         "run_approved_script" => development::run_approved_script(&context, arguments).await,
@@ -550,6 +556,9 @@ pub async fn dispatch(
                 tool,
                 "preview_document"
                     | "git_status"
+                    | "git_log"
+                    | "git_show"
+                    | "git_commit_status"
                     | "git_diff"
                     | "inspect_repository"
                     | "list_symbols"
