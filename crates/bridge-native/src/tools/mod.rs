@@ -13,6 +13,7 @@ pub mod git_review;
 pub mod tables;
 pub mod documents;
 pub mod pdf;
+pub mod workbooks;
 pub mod file_extra;
 pub mod filesystem;
 pub mod recovery;
@@ -457,7 +458,7 @@ pub async fn dispatch(
                 | catalog::Category::Collaboration
         )
         && !crate::grants::TOOLS.contains(&tool)
-        && !matches!(tool, "replace_file" | "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch" | "create_archive" | "extract_archive" | "transform_image" | "render_document_pages")
+        && !matches!(tool, "replace_file" | "delete_file" | "restore_change" | "import_artifact" | "apply_patch" | "restore_patch" | "create_archive" | "extract_archive" | "transform_image" | "render_document_pages" | "write_sheet_range")
     {
         match app.store.write_grant(&app.workspace.id(), session_id) {
             Ok(None) => {}
@@ -475,6 +476,9 @@ pub async fn dispatch(
         "image_info" => images::info(&context, arguments).await,
         "transform_image" => images::transform(&context, arguments).await,
         "render_document_pages" => pdf::render(&context, arguments).await,
+        "inspect_workbook" => workbooks::inspect(&context, arguments).await,
+        "read_sheet_range" => workbooks::read(&context, arguments).await,
+        "write_sheet_range" => workbooks::write(&context, arguments).await,
         "list_archive" => archives::list(&context, arguments).await,
         "extract_archive" => archives::extract(&context, arguments).await,
         "create_archive" => archives::create(&context, arguments).await,
@@ -570,6 +574,8 @@ pub async fn dispatch(
                     | "read_table"
                     | "query_table"
                     | "document_info"
+                    | "inspect_workbook"
+                    | "read_sheet_range"
                     | "integration_status"
                     | "extract_document_text"
                     | "git_commit_status"

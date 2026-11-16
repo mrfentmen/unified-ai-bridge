@@ -2,6 +2,24 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## XLSX read/edit-copy candidate 0.5.16 — November 16, 2026
+
+The source and isolated package are 0.5.16. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 187 passed, 0 failed, one separately verified long job omitted from routine runs. Six workbook tests also passed after the final audit/metadata/error-bound changes |
+| Workbook tests | Typed values, stale formula caches, hidden sheets, sparse cells, Unicode/OOXML literal escapes, preserved styles/parts/source, denied/changed approvals, private/research/link policy, hostile XML/ZIP/counts, duplicate cells, 1,000 unsupported features and strict edit refusal |
+| Isolated package | Final WASM/native/tooling release builds exited 0; source/package/manifest/native versions matched 0.5.16 |
+| Public XLSX | Calamine's public empty_shared_string.xlsx returned Sheet1 A1=`abc` and A2 empty. The denied edit wrote nothing; approval saved a new copy with A2=`Edited`. Bridge read-back matched |
+| Independent checks | Python stdlib ZIP/XML reads confirmed A2 is literal inline text and every other package payload remained byte-identical. macOS Quick Look opened/rendered the saved copy; the thumbnail was inspected and showed `abc` and `Edited` |
+| Refusals | Repeated destination, private .env read and changed-source hash were refused. Original remained unchanged by the edit. A separate longer-text preview overflowed the original width, confirming that this cell editor does not autofit columns |
+| Installed checks | 41 self-tests passed; doctor passed config/binary/manifest/SQLite and all 24 database/file audit entries |
+| Previous CI | PDF candidate 0.5.15 run 43950054650 passed Linux tests, Intel tests and Intel packaging. 0.5.14 run 43946276762 also passed all required jobs |
+| Browser | Workbook controls compiled; provider delivery and live UI acceptance remain pending |
+
+Public sample: [Calamine empty_shared_string.xlsx](https://github.com/tafia/calamine/blob/v0.38.0/tests/empty_shared_string.xlsx), SHA-256 `88bcdff00d736ca11e578e7dc5d5072b29af99d8a2f6594fe479eb5c66c57c9f`. Edited copy SHA-256: `a86f75be9033cfdc1d9b37214e53be8b5b0339e8afca96c990fe538c004ec819`. Installed native SHA-256: `f77eaab88c98813ae179e68c496128af2993aa5fc8dfdd94eb86cda0f812feb9`. Raw logs, framed messages, workbook and Quick Look thumbnail are in ignored `docs/evidence/0.5.16/`. The bundled spreadsheet artifact renderer was unavailable; Quick Look and independent XML reads supplied the separate checks. This does not prove Excel-app integration or recalculation. [Subset and limits](WORKBOOKS.md).
+
 ## PDF text and page-preview candidate 0.5.15 — November 16, 2026
 
 The source and isolated package are 0.5.15. Normal Chrome files/native installation remain 0.5.7; no new live browser acceptance is claimed.

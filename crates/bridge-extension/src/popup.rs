@@ -523,6 +523,12 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let table_path=RwSignal::new(String::new());
     let table_query=RwSignal::new("{\"filters\":[],\"aggregate_columns\":[]}".to_string());
     let table_page=RwSignal::new(None::<(String,serde_json::Value)>);
+    let workbook_path=RwSignal::new(String::new());
+    let workbook_sheet=RwSignal::new(String::new());
+    let workbook_range=RwSignal::new("A1:D10".to_string());
+    let workbook_hash=RwSignal::new(String::new());
+    let workbook_destination=RwSignal::new(String::new());
+    let workbook_values=RwSignal::new("[[\"New value\"]]".to_string());
     let document_path=RwSignal::new(String::new());
     let document_next=RwSignal::new(None::<serde_json::Value>);
     let document_hash=RwSignal::new(String::new());
@@ -558,6 +564,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             git_review.set(String::new());
             git_commit.set(String::new());
             table_page.set(None);
+            workbook_hash.set(String::new());
             document_next.set(None);
             document_hash.set(String::new());
             zip_hash.set(String::new());
@@ -618,6 +625,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     if name=="read_table"||name=="query_table"{table_page.set(None);if value["status"]=="ok"&&!value["data"]["next_offset"].is_null(){let mut next=args.clone();next["offset"]=value["data"]["next_offset"].clone();next["expected_sha256"]=value["data"]["sha256"].clone();table_page.set(Some((name.clone(),next)));}}
                     if name=="extract_document_text"{document_next.set(None);if value["status"]=="ok"&&!value["data"]["next_offset"].is_null(){let mut next=args.clone();next["offset"]=value["data"]["next_offset"].clone();next["expected_sha256"]=value["data"]["sha256"].clone();document_next.set(Some(next));}}
                     if value["status"]=="ok"&&(name=="document_info"||name=="extract_document_text"){document_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());}
+                    if value["status"]=="ok"&&(name=="inspect_workbook"||name=="read_sheet_range"){workbook_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());}
                     if value["status"]=="ok" && name=="calculate_sha256" {
                         let hash=value["data"]["sha256"].as_str().unwrap_or_default().to_string();
                         if args["path"].as_str()==Some(binary_source.get_untracked().as_str()){binary_source_hash.set(hash.clone());}
@@ -712,6 +720,17 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <textarea aria-label="Structured table query JSON" style=CONTROL_STYLE rows="4" prop:value=move||table_query.get() on:input=move|ev|{table_query.set(event_target_value(&ev));table_page.set(None);}></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||table_path.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&table_query.get()){Ok(mut args) if args.is_object()=>{args["path"]=json!(table_path.get());execute("query_table".into(),args);},_=>error.set(Some("Enter a JSON object with columns, filters and/or aggregate_columns.".into()))}}>"Run structured query"</button>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||table_page.get().is_none() on:click=move |_|{if let Some((name,args))=table_page.get(){execute(name,args);}}>"Next table page"</button>
+                </details>
+                <details><summary>"XLSX cells"</summary>
+                    <p>"Read stored values; formula caches may be stale. Editing creates a new file and supports existing plain cells only. Formulas, merges, tables, drawings and other complex editing features are refused."</p>
+                    <input aria-label="XLSX source path" style=CONTROL_STYLE placeholder="files/workbook.xlsx" prop:value=move||workbook_path.get() on:input=move|ev|{workbook_path.set(event_target_value(&ev));workbook_hash.set(String::new());}/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||workbook_path.get().is_empty() on:click=move |_|execute("inspect_workbook".into(),json!({"path":workbook_path.get()}))>"Inspect workbook"</button>
+                    <input aria-label="Exact worksheet name" style=CONTROL_STYLE placeholder="Sheet1" prop:value=move||workbook_sheet.get() on:input=move|ev|workbook_sheet.set(event_target_value(&ev))/>
+                    <input aria-label="Worksheet A1 range" style=CONTROL_STYLE placeholder="A1:D10" prop:value=move||workbook_range.get() on:input=move|ev|workbook_range.set(event_target_value(&ev))/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||workbook_hash.get().is_empty()||workbook_sheet.get().is_empty() on:click=move |_|execute("read_sheet_range".into(),json!({"path":workbook_path.get(),"sheet":workbook_sheet.get(),"range":workbook_range.get(),"expected_sha256":workbook_hash.get()}))>"Read cell range"</button>
+                    <input aria-label="New XLSX destination" style=CONTROL_STYLE placeholder="output/edited.xlsx" prop:value=move||workbook_destination.get() on:input=move|ev|workbook_destination.set(event_target_value(&ev))/>
+                    <textarea aria-label="Literal cell rows as JSON" style=CONTROL_STYLE rows="3" prop:value=move||workbook_values.get() on:input=move|ev|workbook_values.set(event_target_value(&ev))></textarea>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||workbook_hash.get().is_empty()||workbook_destination.get().is_empty()||workbook_sheet.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&workbook_values.get()){Ok(values) if values.is_array()=>execute("write_sheet_range".into(),json!({"path":workbook_path.get(),"destination":workbook_destination.get(),"sheet":workbook_sheet.get(),"range":workbook_range.get(),"expected_sha256":workbook_hash.get(),"values":values})),_=>error.set(Some("Enter rows of literal values, for example [[1,\"text\"],[2,null]].".into()))}}>"Request edited workbook copy"</button>
                 </details>
                 <details><summary>"Read documents and preview PDF pages"</summary>
                     <p>"DOCX body text with reported omissions. On macOS: PDF embedded text with physical page references and approved PNG previews. No OCR, encrypted PDFs or DOCX rendering. Previews omit annotations/forms and are saved locally; they are not sent to a chat."</p>

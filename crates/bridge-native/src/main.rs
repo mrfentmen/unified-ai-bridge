@@ -32,6 +32,8 @@ enum Command {
     #[command(hide = true)]
     PdfWorker,
     #[command(hide = true)]
+    XlsxWorker,
+    #[command(hide = true)]
     JobWorker { job_id: String },
     /// Run the Chrome native messaging host (default when launched by Chrome).
     Native,
@@ -113,6 +115,7 @@ async fn main() -> Result<()> {
         Command::RustSymbolWorker => bridge_native::tools::code_navigation::rust_symbol_worker(),
         Command::DocxWorker => bridge_native::tools::documents::worker(),
         Command::PdfWorker => bridge_native::tools::pdf::worker(),
+        Command::XlsxWorker => bridge_native::tools::workbooks::worker(),
         Command::Native => native_host::run().await,
         Command::Setup {
             project,

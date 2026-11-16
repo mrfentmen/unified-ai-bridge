@@ -39,4 +39,4 @@ An oversized table, malformed record, invalid UTF-8, duplicate header or overflo
 
 Five dedicated tests cover quoted Unicode/multiline data, pagination, stale files, complete aggregates, numeric exclusions, limits, malformed input, policy denials and literal formula-looking text. These are temporary test fixtures, not provider integrations. Native transport verification uses CSV records from this repository's actual Git history.
 
-UAB-18 remains open for XLSX inspection/editing, supported-content preservation and live browser acceptance. The new panel controls are not yet verified in Chrome.
+XLSX support is provided by the separate [workbook tools](WORKBOOKS.md) in 0.5.16. UAB-18 remains open for live browser acceptance and broader editing workflows; these CSV/TSV tools remain read-only.
