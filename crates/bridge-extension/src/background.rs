@@ -174,6 +174,7 @@ enum BgRequest {
         command_id: String,
     },
     CommandList,
+    RecoveryControl { workspace_id: String, action: Value },
     JobControl {
         workspace_id: String,
         action: Value,
@@ -679,6 +680,7 @@ fn handle_message(
         | BgRequest::CommandGrant { .. }
         | BgRequest::CommandRevoke { .. }
         | BgRequest::CommandList
+        | BgRequest::RecoveryControl { .. }
         | BgRequest::JobControl { .. }
         | BgRequest::Preflight
         | BgRequest::CreateWriteGrant { .. }
@@ -738,6 +740,7 @@ fn handle_message(
                     json!({"type":"revoke_command","command_id":command_id})
                 }
                 BgRequest::CommandList => json!({"type":"list_command_grants"}),
+                BgRequest::RecoveryControl {workspace_id,action} => json!({"type":"recovery_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::JobControl {
                     workspace_id,
                     action,

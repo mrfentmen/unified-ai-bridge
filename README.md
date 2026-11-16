@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.8 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -22,6 +22,7 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **Package and unpack selected files.** Inspect a bounded ZIP, approve extraction into a new folder, or create a ZIP from an explicit file list. Path checks, hashes and CRC validation protect the operation; contents are never run. [Supported ZIP subset](docs/ARCHIVES.md).
 - **Inspect and transform image files.** Read PNG/JPEG/WebP metadata and make a new resized, cropped, rotated or converted copy after approval. Originals stay intact; unsupported features are refused explicitly. [Image limits](docs/IMAGES.md).
 - **Review and recover edits.** Preview single-file or [multi-file changes](docs/PATCHES.md), check hashes before overwriting, inspect recovery receipts, and request a restore. Deletion moves files to workspace trash and requires approval.
+- **Recover larger files (0.5.8 candidate).** Approved replacements and trash/restore support files up to 64 MiB, with private snapshots, storage limits and manual cleanup. Native checks passed; the new browser controls still need live acceptance. [Recovery behavior and limits](docs/BINARY-RECOVERY.md).
 - **Use your own project commands.** Grant a specific executable, arguments, working directory, timeout, and output limit. The chat selects an allowed command; it cannot invent a shell command.
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.

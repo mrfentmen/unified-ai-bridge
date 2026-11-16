@@ -23,12 +23,17 @@ pub struct Change {
     pub before_sha256: Option<String>,
     pub after_sha256: Option<String>,
     pub state: String,
-    before_base64: Option<String>,
+    pub(super) before_base64: Option<String>,
+    #[serde(default)]
+    pub(super) binary_backup: Option<super::large_recovery::Backup>,
     pub trash: Option<String>,
 }
 
 impl Change {
     pub(crate) fn before_bytes(&self) -> Result<Option<Vec<u8>>, ToolFailure> {
+        if self.binary_backup.is_some() {
+            return Err(ToolFailure::Unsupported("binary changes require restore_change".into()));
+        }
         let before = self
             .before_base64
             .as_ref()
@@ -44,7 +49,9 @@ impl Change {
     pub fn metadata(&self) -> Value {
         json!({"change_id":self.id,"workspace_id":self.workspace_id,"created_at":self.created_at,
             "agent":self.agent,"path":self.path,"operation":self.operation,"before_sha256":self.before_sha256,
-            "after_sha256":self.after_sha256,"state":self.state,"trash":self.trash})
+            "after_sha256":self.after_sha256,"state":self.state,"trash":self.trash,
+            "binary":self.binary_backup.is_some(),"before_bytes":self.binary_backup.as_ref().map(|b|b.bytes),
+            "backup_available":self.state!="backup_removed"})
     }
 }
 
@@ -284,6 +291,7 @@ async fn mutate_inner(
         after_sha256: content.map(fsops::sha256_bytes),
         state: "prepared".into(),
         before_base64: before.map(|b| STANDARD.encode(b)),
+        binary_backup: None,
         trash: None,
     };
     // Reserve the trash destination before recording intent. The model cannot
@@ -439,6 +447,11 @@ struct Delete {
 }
 pub async fn delete(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, ToolFailure> {
     let args: Delete = parse_args(args)?;
+    let path = ctx.resolve_existing(&args.path)?;
+    ctx.check_read("delete_file", &path)?;
+    if fs::metadata(&path.absolute).map_err(internal)?.len() > MAX_READ_BYTES {
+        return super::large_recovery::delete(ctx, &args.path, &args.expected_sha256).await;
+    }
     let (path, _, change) = mutate(
         ctx,
         "delete_file",
@@ -472,6 +485,9 @@ pub async fn restore(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, 
         .file_change(&args.change_id, &ctx.app.workspace.id())
         .map_err(internal)?
         .ok_or_else(|| ToolFailure::NotFound("no change in this workspace".into()))?;
+    if change.binary_backup.is_some() {
+        return super::large_recovery::restore(ctx, change).await;
+    }
     let before = change
         .before_base64
         .as_ref()

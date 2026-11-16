@@ -16,6 +16,8 @@ The 0.5.6 milestone completes the declared PNG/JPEG/WebP subset in UAB-17: metad
 
 The 0.5.7 reliability pass verified read/create/read-back and approved patch delivery for all seven provider identities (Grok on X), including overlapping approvals, draft-safe result delivery and fresh hidden-tab registration. It fixes Claude hidden-announcement extraction and documents Qwen foreground/candidate-choice limits and the Grok.com quota block. UAB-05 remains open for fully unattended recovery across these website states. See [current evidence](VERIFICATION.md).
 
+The 0.5.8 candidate implements the native portion of UAB-15: 64 MiB replacements, larger-file trash/restore, private snapshots, storage budgets and explicit retention cleanup. Ten dedicated tests, 139 total tests, 41 installed self-tests and a real packaged Native Messaging replace/restart/restore exercise passed. Chrome controls are built but live acceptance is blocked because the current Browser connection is unavailable; the working 0.5.7 browser install was preserved. UAB-15 stays open until that gate passes. See [binary recovery](BINARY-RECOVERY.md).
+
 ## 1. Make unattended work dependable
 
 Start here. The current configuration permits 16 calls per task, 4 per assistant response, 180 seconds for an approval, and 240 seconds for a tool call. These are current limits, not recommended overnight defaults. The installed host has an ad-hoc linker signature; stable signing and permission persistence still need implementation and verification.

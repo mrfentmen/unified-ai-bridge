@@ -746,6 +746,9 @@ pub async fn run() -> Result<()> {
             ExtToHost::ListCommandGrants { request_key } => {
                 send_control(&tx,request_key,Ok(serde_json::json!({"commands":app.config.workspace_commands.get(&app.workspace.id()).cloned().unwrap_or_default()}))).await;
             }
+            ExtToHost::RecoveryControl { request_key, workspace_id, action } => {
+                send_control(&tx, request_key, crate::tools::large_recovery::control(&app, &workspace_id, action)).await;
+            }
             ExtToHost::JobControl {
                 request_key,
                 workspace_id,

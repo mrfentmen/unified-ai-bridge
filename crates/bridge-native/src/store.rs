@@ -371,6 +371,27 @@ impl Store {
             params![record.id,record.workspace_id,record.created_at,serde_json::to_string(record)?])?;
         Ok(())
     }
+
+    pub fn recovery_settings(&self, workspace: &str) -> Result<crate::tools::large_recovery::Settings> {
+        let raw: Option<String> = self.conn.lock().expect("store mutex").query_row(
+            "SELECT value FROM bridge_state WHERE key=?1", [format!("recovery:{workspace}")], |r|r.get(0)
+        ).optional()?;
+        Ok(raw.map(|v|serde_json::from_str(&v)).transpose()?.unwrap_or_default())
+    }
+    pub fn save_recovery_settings(&self, workspace: &str, settings: &crate::tools::large_recovery::Settings) -> Result<()> {
+        settings.validate()?;
+        self.conn.lock().expect("store mutex").execute(
+            "INSERT INTO bridge_state VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![format!("recovery:{workspace}"),serde_json::to_string(settings)?]
+        )?;
+        Ok(())
+    }
+    pub fn binary_changes(&self, workspace: &str) -> Result<Vec<crate::tools::recovery::Change>> {
+        let conn = self.conn.lock().expect("store mutex");
+        let mut query = conn.prepare("SELECT record FROM file_changes WHERE workspace_id=?1 AND json_type(record,'$.binary_backup')='object' AND json_extract(record,'$.state') != 'backup_removed' ORDER BY created_at DESC LIMIT 2049")?;
+        let rows = query.query_map([workspace], |r|r.get::<_,String>(0))?;
+        rows.map(|r|Ok(serde_json::from_str(&r?)?)).collect()
+    }
     pub fn save_patch(&self, patch:&crate::tools::patches::Patch)->Result<()> {
         self.conn.lock().expect("store mutex").execute("INSERT INTO patches VALUES (?1,?2,?3) ON CONFLICT(id) DO UPDATE SET record=excluded.record",params![patch.id,patch.workspace_id,serde_json::to_string(patch)?])?;Ok(())
     }

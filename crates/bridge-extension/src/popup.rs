@@ -235,6 +235,7 @@ fn bridge_ui(wide: bool) -> impl IntoView {
 
             <SectionTitle text="Recent local activity"/>
             <JobControls status=status error=error/>
+            <RecoveryControls status=status error=error/>
             <ActivityFeed status=status error=error/>
 
             <Show when=move || error.get().is_some() || status.get().last_error.is_some()>
@@ -511,6 +512,10 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let zip_destination = RwSignal::new(String::new());
     let zip_files = RwSignal::new("[]".to_string());
     let zip_hash = RwSignal::new(String::new());
+    let binary_source = RwSignal::new(String::new());
+    let binary_destination = RwSignal::new(String::new());
+    let binary_source_hash = RwSignal::new(String::new());
+    let binary_expected = RwSignal::new(String::new());
     let image_path = RwSignal::new(String::new());
     let image_destination = RwSignal::new(String::new());
     let image_hash = RwSignal::new(String::new());
@@ -531,6 +536,8 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             patch_session.set(String::new());
             zip_hash.set(String::new());
             image_hash.set(String::new());
+            binary_source_hash.set(String::new());
+            binary_expected.set(String::new());
             expected.set(None);
             result.set(serde_json::Value::Null);
         }
@@ -576,6 +583,11 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     }
                     if value["status"]=="ok" && name=="image_info" && args["path"].as_str()==Some(image_path.get_untracked().as_str()) {
                         image_hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());
+                    }
+                    if value["status"]=="ok" && name=="calculate_sha256" {
+                        let hash=value["data"]["sha256"].as_str().unwrap_or_default().to_string();
+                        if args["path"].as_str()==Some(binary_source.get_untracked().as_str()){binary_source_hash.set(hash.clone());}
+                        if args["path"].as_str()==Some(binary_destination.get_untracked().as_str()){binary_expected.set(hash);}
                     }
                     if value["status"]!="ok" {error.set(Some(value["error"].as_str().unwrap_or("Tool failed").to_string()));}
                     else{error.set(None);}
@@ -629,6 +641,17 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <button style=CONTROL_STYLE disabled=move||busy.get()||zip_hash.get().is_empty()||zip_destination.get().is_empty() on:click=move |_|execute("extract_archive".into(),json!({"path":zip_path.get(),"destination":zip_destination.get(),"expected_sha256":zip_hash.get()}))>"Request ZIP extraction"</button>
                     <textarea aria-label="Archive source paths JSON" style=CONTROL_STYLE rows="3" placeholder="[\"files/main.rs\",\"notes/readme.md\"]" prop:value=move||zip_files.get() on:input=move|ev|zip_files.set(event_target_value(&ev))></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||zip_destination.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&zip_files.get()){Ok(paths)=>execute("create_archive".into(),json!({"paths":paths,"destination":zip_destination.get()})),Err(err)=>error.set(Some(format!("Invalid file list JSON: {err}")))}}>"Request ZIP creation"</button>
+                </details>
+                <details><summary>"Replace or trash a binary file"</summary>
+                    <p>"Up to 64 MiB. Hash both files first; each change requires approval. Original files and private snapshots count toward the recovery budget. Use Recovery history to restore."</p>
+                    <input aria-label="Binary source path" style=CONTROL_STYLE prop:value=move||binary_source.get() on:input=move|ev|{binary_source.set(event_target_value(&ev));binary_source_hash.set(String::new());}/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("calculate_sha256".into(),json!({"path":binary_source.get()}))>"Hash binary source"</button>
+                    <input aria-label="Binary source SHA256" style=CONTROL_STYLE prop:value=move||binary_source_hash.get() on:input=move|ev|binary_source_hash.set(event_target_value(&ev))/>
+                    <input aria-label="Binary destination path" style=CONTROL_STYLE prop:value=move||binary_destination.get() on:input=move|ev|{binary_destination.set(event_target_value(&ev));binary_expected.set(String::new());}/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|execute("calculate_sha256".into(),json!({"path":binary_destination.get()}))>"Hash binary destination"</button>
+                    <input aria-label="Binary destination SHA256" style=CONTROL_STYLE prop:value=move||binary_expected.get() on:input=move|ev|binary_expected.set(event_target_value(&ev))/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||binary_expected.get().is_empty()||binary_source_hash.get().is_empty() on:click=move |_|execute("replace_file".into(),json!({"source":binary_source.get(),"destination":binary_destination.get(),"source_sha256":binary_source_hash.get(),"expected_sha256":binary_expected.get()}))>"Request binary replacement"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||binary_expected.get().is_empty() on:click=move |_|execute("delete_file".into(),json!({"path":binary_destination.get(),"expected_sha256":binary_expected.get()}))>"Request binary trash"</button>
                 </details>
                 <details><summary>"Image files"</summary>
                     <p>"Inspect PNG/JPEG/WebP. Resize, crop, rotate or convert into a new approved file. Exact resize may change aspect ratio. Animation, ICC profiles, high bit depth and transparent JPEG output are refused. This does not attach images to chats."</p>
@@ -1066,6 +1089,44 @@ fn WriteGrantControls(
                 view!{<div style="word-break:break-all">{summary}<button style=CONTROL_STYLE on:click=move |_|request(json!({"op":"revoke_write_grant","workspace_id":status.get().active_id,"session_id":sid}))>"Revoke"</button></div>}
             }).collect_view()}
             <pre style="white-space:pre-wrap;max-height:200px;overflow:auto">{move||notice.get()}</pre>
+        </details>
+    }
+}
+
+#[component]
+fn RecoveryControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -> impl IntoView {
+    let result = RwSignal::new(serde_json::Value::Null);
+    let settings = RwSignal::new(String::new());
+    let busy = RwSignal::new(false);
+    let seen = RwSignal::new(String::new());
+    Effect::new(move |_| {let active=status.get().active_id;if active!=seen.get_untracked(){seen.set(active);result.set(serde_json::Value::Null);settings.set(String::new());}});
+    let request=move|action:serde_json::Value|{
+        if busy.get_untracked(){return;}
+        busy.set(true);let workspace=status.get_untracked().active_id;
+        spawn_local(async move{
+            match workspace_request(json!({"op":"recovery_control","workspace_id":workspace,"action":action})).await{
+                Ok(value)=>{if status.get_untracked().active_id==workspace{settings.set(serde_json::to_string_pretty(&value["settings"]).unwrap_or_default());result.set(value);error.set(None);}},
+                Err(err)=>error.set(Some(err)),
+            }
+            busy.set(false);
+        });
+    };
+    view!{
+        <details style="border:1px solid #304451;padding:8px;margin-bottom:10px">
+            <summary>"Binary recovery storage"</summary>
+            <p>"Private snapshots and retained originals are bounded per workspace. Retention marks backups eligible for manual cleanup; nothing expires automatically. Text checkpoints use the existing journal."</p>
+            <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|request(json!({"kind":"status"}))>"Inspect recovery storage"</button>
+            <div>{move||if result.get().is_null(){String::new()}else{format!("{} bytes reserved · {} snapshots",result.get()["reserved_bytes"],result.get()["snapshots"])}}</div>
+            <label>"Settings: storage MiB, retention days, snapshot count and free-space reserve MiB"</label>
+            <textarea aria-label="Recovery settings JSON" style=CONTROL_STYLE rows="5" prop:value=move||settings.get() on:input=move|ev|settings.set(event_target_value(&ev))></textarea>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||settings.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&settings.get()){Ok(settings)=>request(json!({"kind":"settings","settings":settings})),Err(e)=>error.set(Some(format!("Invalid recovery settings: {e}")))}}>"Save recovery settings"</button>
+            {move||result.get()["expired"].as_array().cloned().unwrap_or_default().into_iter().map(|entry|{
+                let id=entry["change_id"].as_str().unwrap_or_default().to_string();
+                let label=format!("{} · {} · {} bytes",entry["created_at"],entry["path"],entry["before_bytes"]);
+                view!{<div>{label}<button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{
+                    if web_sys::window().and_then(|w|w.confirm_with_message("Permanently remove this expired snapshot and retained original? Undo for this change will no longer be available. Current workspace files and audit records remain.").ok()).unwrap_or(false){request(json!({"kind":"cleanup","change_ids":[id]}));}
+                }>"Delete expired backup"</button></div>}
+            }).collect_view()}
         </details>
     }
 }

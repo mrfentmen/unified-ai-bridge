@@ -43,6 +43,11 @@ pub enum ExtToHost {
         session_id: String,
     },
     Status,
+    RecoveryControl {
+        request_key: String,
+        workspace_id: String,
+        action: crate::tools::large_recovery::Control,
+    },
     JobControl {
         request_key: String,
         workspace_id: String,

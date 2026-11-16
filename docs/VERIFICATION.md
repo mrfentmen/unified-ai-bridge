@@ -2,6 +2,35 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## Binary recovery candidate 0.5.8 — November 16, 2026
+
+This candidate was built and installed in an isolated directory. The live extension package and normal installed host remain **0.5.7**; no 0.5.8 Chrome or provider result is claimed.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 139 passed, 0 failed; one deliberately slow test ignored |
+| New recovery checks | Seven integration tests plus three interruption/storage/cleanup tests passed |
+| Build | Pinned WASM, native and tooling release builds exited 0; staged lib.rs, Cargo.toml and manifest all 0.5.8 |
+| Isolated installation | Native manifest points to the isolated installed binary, version 0.5.8; normal Chrome manifest unchanged |
+| Native handshake | Real length-prefixed hello returned host 0.5.8/protocol 6 |
+| Real binary replacement | Copied the actual 0.5.7 and 0.5.8 extension WASM assets into an isolated general workspace: 1,419,644 → 1,467,238 bytes. Approved replacement matched the new hash; denied replacement preserved the old bytes |
+| Recovery after restart | Terminated and restarted the installed test host; restore from the saved change ID returned the exact original bytes |
+| Trash and restore | The larger original disappeared from its public path after approved trash; approved restore reproduced its SHA-256 |
+| Later edit | Appended an independent edit; restore returned file_changed and preserved that edit |
+| Settings and history | New trusted wire controls reported four snapshots / 8,613,052 counted bytes; retention changed to 31 days in this isolated workspace. Four distinct committed receipts retained CHATGPT attribution |
+| Selftest / doctor | 41 self-tests passed. Doctor passed config, installed binary, native manifest, SQLite and 36 matching audit DB/file entries |
+| Browser gate | Browser runtime reported no available Chrome connection. Its extension and native connector are absent. Skill troubleshooting prohibits an AppleScript substitute. No new Chrome approval, controls or provider acceptance is claimed |
+| Prior release CI | 0.5.7 run 43926814464 passed Linux tests, Intel macOS tests and Intel packaging |
+
+Actual source hashes:
+
+```text
+0.5.7 WASM  9e77cfdcc84d99a02f0037c8fc9b0d7c2ececea64f39d51a404b835e0a40de4c
+0.5.8 WASM  75b3125d4339acb2a529602634081c46b1e3aab5510e5102a34b960a8f59d9cf
+```
+
+Raw results are in ignored `docs/evidence/0.5.8/`: tests.log, deploy.log, selftest.log, doctor.log and wire-results.json. The protocol driver is a test client of the real installed host, not a browser extension or model conversation. Expired cleanup was tested with deliberate old timestamps in temporary test fixtures; no live retention or cleanup result is fabricated. UAB-15 remains open for live UI acceptance.
+
 ## Adapter and concurrent conversation checks 0.5.7 — November 16, 2026
 
 | Check | Observed result |
