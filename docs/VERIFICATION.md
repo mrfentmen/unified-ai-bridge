@@ -6,6 +6,10 @@ Raw transcripts, session IDs, conversation URLs, machine paths, audit exports, a
 
 ## Patch 0.4.7 — November 16, 2026
 
+[Tagged release CI](https://github.com/mrfentmen/unified-ai-bridge/actions/runs/43880560247) passed on commit `6ef4e3b234726a3b17b12c8ceb01849526f99eb7`. Ubuntu 24.04 and the macOS 15 Intel runner each passed all **81 workspace tests and 41 self-tests**. The macOS packaging job built the WASM extension and release host, confirmed version 0.4.7, installed into isolated directories, and verified the binary hash and exact native manifest origin/path. The extension artifact uploaded successfully. The gated publication job then published [v0.4.7](https://github.com/mrfentmen/unified-ai-bridge/releases/tag/v0.4.7).
+
+Hosted Intel build/test evidence does not establish compatibility with a physical 2015 MacBook Pro or older macOS versions.
+
 | Check | Recorded result |
 | --- | --- |
 | Workspace tests | 81 passed, 0 failed: 32 core, 17 native unit, 13 filesystem, 1 real MCP subprocess, 7 Native Messaging, 9 workspace/command, 2 tooling |
