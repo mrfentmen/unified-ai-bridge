@@ -24,9 +24,11 @@ The 0.5.10 candidate strengthens the read portion of UAB-10: explicit repository
 
 The 0.5.11 candidate implements the remaining native UAB-10 workflow: bounded log/historical-file reads and explicitly approved commits on new branches using a private index. Ten dedicated tests, 161 routine tests and 41 installed self-tests passed. A real packaged Native Messaging exercise committed two selected files, preserved HEAD/index/unrelated edits, denied another commit and recovered its receipt after host restart. Live browser acceptance remains open. The separate 249.6-second Cargo job check also passed, adding duration/recovery evidence for UAB-07 without claiming whole-task orchestration.
 
-## 1. Make unattended work dependable
-
 The 0.5.12 candidate implements the read/query portion of UAB-18 for CSV/TSV: projected columns, quoted records, hash-checked pagination, structured filters and bounded numeric summaries. Five dedicated tests, 166 routine tests and 41 installed self-tests passed. Packaged Native Messaging read 19 actual repository-history records and independently matched the query counts/sum. XLSX, workbook edits and browser acceptance remain open. See [table support](TABLES.md).
+
+The 0.5.13 candidate implements a DOCX body-text subset of UAB-16 in an isolated native worker. Five dedicated checks, 171 routine tests, 41 installed self-tests and a packaged Native Messaging extraction of a public DOCX sample passed. The two extracted labels matched macOS textutil's independent output. PDF, OCR, rendered pages, additional Word content and browser acceptance remain open. See [document support](DOCUMENTS.md).
+
+## 1. Make unattended work dependable
 
 Start here. The current configuration permits 16 calls per task, 4 per assistant response, 180 seconds for an approval, and 240 seconds for a tool call. These are current limits, not recommended overnight defaults. The installed host has an ad-hoc linker signature; stable signing and permission persistence still need implementation and verification.
 

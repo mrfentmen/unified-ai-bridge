@@ -28,6 +28,8 @@ enum Command {
     #[command(hide = true)]
     RustSymbolWorker,
     #[command(hide = true)]
+    DocxWorker,
+    #[command(hide = true)]
     JobWorker { job_id: String },
     /// Run the Chrome native messaging host (default when launched by Chrome).
     Native,
@@ -107,6 +109,7 @@ async fn main() -> Result<()> {
             bridge_native::jobs::worker(HomePaths::discover()?, &job_id).await
         }
         Command::RustSymbolWorker => bridge_native::tools::code_navigation::rust_symbol_worker(),
+        Command::DocxWorker => bridge_native::tools::documents::worker(),
         Command::Native => native_host::run().await,
         Command::Setup {
             project,

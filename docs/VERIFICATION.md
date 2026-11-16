@@ -2,6 +2,22 @@
 
 These are recorded results, not a guarantee of every environment. The latest local checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
 
+## DOCX body-text candidate 0.5.13 — November 16, 2026
+
+The source and isolated package are 0.5.13. Normal Chrome files/native installation remain 0.5.7; the new browser controls remain unverified.
+
+| Check | Observed result |
+|---|---|
+| Workspace suite | 171 passed, 0 failed; one long-duration test omitted from routine runs and separately passed on 0.5.10 |
+| Five document checks | Unicode chunks; physical text boundaries; omitted content; revisions/fields; inert relationships; hostile XML/ZIP; stale/invalid offsets; private/link/unknown-input denials; response limits |
+| Isolated package | Final WASM/native/tooling builds exited 0; source/package/manifest/native versions all 0.5.13 |
+| Public DOCX | Packaged Native Messaging extracted Apple and Banana from Mammoth's public simple-list.docx. macOS textutil independently returned the same labels with bullet formatting, which the bridge explicitly does not reproduce |
+| Refusals | Private .env read denied; PDF reported unsupported; changed DOCX continuation returned file_changed; page_count remained null |
+| Installed checks | 41 self-tests passed; doctor passed config/binary/manifest/SQLite and 13 matching audit entries |
+| CI observed | 0.5.10 run 43938573686 passed Linux/Intel tests and Intel packaging. 0.5.11 run 43940962932 passed Linux/Intel tests; packaging was still running |
+
+Sample: [Mammoth simple-list.docx](https://github.com/mwilliamson/mammoth.js/blob/master/test/test-data/simple-list.docx), SHA-256 `ed3c015cf411d07b08bf34264ff709363740b0747af355479088079d0796dfb3`. Installed native SHA-256: `1fce48325ff88cc9e21c1bebfed030731eb5c8d91523ec90a5140a5b73ff1a4e`. Raw outputs are in ignored `docs/evidence/0.5.13/`. This establishes a body-text subset, not PDF support, visual fidelity or a provider conversation. [Limits](DOCUMENTS.md).
+
 ## CSV/TSV candidate 0.5.12 — November 16, 2026
 
 The source and isolated package are 0.5.12. Normal Chrome files and installed host remain 0.5.7; browser acceptance is pending.

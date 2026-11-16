@@ -46,9 +46,9 @@ fn deadline(end: Instant) -> Result<(), ToolFailure> {
     }
 }
 
-struct Plan {
-    entries: Vec<Entry>,
-    expanded: u64,
+pub(super) struct Plan {
+    pub(super) entries: Vec<Entry>,
+    pub(super) expanded: u64,
 }
 
 fn safe_name(raw: &str, is_dir: bool) -> Result<String, ToolFailure> {
@@ -201,7 +201,7 @@ fn directory_count(bytes: &[u8]) -> Result<usize, ToolFailure> {
     }
     Ok(count)
 }
-fn inspect(bytes: &[u8]) -> Result<(ZipArchive<Cursor<&[u8]>>, Plan), ToolFailure> {
+pub(super) fn inspect(bytes: &[u8]) -> Result<(ZipArchive<Cursor<&[u8]>>, Plan), ToolFailure> {
     let count = directory_count(bytes)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(zip_error)?;
     if archive.len() != count {

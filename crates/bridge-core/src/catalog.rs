@@ -48,6 +48,8 @@ impl Category {
 const PATH: &str = r#"{"type":"object","properties":{"path":{"type":"string","description":"Workspace-relative path"}},"required":["path"],"additionalProperties":false}"#;
 
 pub const TOOLS: &[ToolSpec] = &[
+    ToolSpec {name:"document_info",category:Category::Filesystem,description:"Inspect bounded non-macro DOCX main-body text metadata in an isolated native parser. Reports paragraphs, omitted content and unsupported rendering/OCR. Does not infer page count or open relationships. PDF/DOC/DOCM unavailable.",arguments:"path (.docx)",schema:PATH,writes:false},
+    ToolSpec {name:"extract_document_text",category:Category::Filesystem,description:"Read a DOCX body text chunk with byte offset and SHA256 continuation. Tables flatten to paragraphs; deletions/alternate-content omitted, cached fields not evaluated. No external references, macros, images, OCR or page rendering. Explicit subset limits returned.",arguments:"path (.docx), offset? (returned byte offset), max_bytes? (256–24000), expected_sha256? (required for continuation)",schema:r#"{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer","minimum":0},"max_bytes":{"type":"integer","minimum":256,"maximum":24000},"expected_sha256":{"type":"string"}},"required":["path"],"additionalProperties":false}"#,writes:false},
     ToolSpec {
         name:"read_table",category:Category::Filesystem,
         description:"Read bounded UTF-8 CSV/TSV data with headers, selected columns, physical line/record numbers and hash-checked pages. Up to 4 MiB, 10,000 records, 250,000 cells. Strings remain strings; formulas never execute. XLSX is not supported.",

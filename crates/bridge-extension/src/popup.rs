@@ -522,6 +522,8 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
     let table_path=RwSignal::new(String::new());
     let table_query=RwSignal::new("{\"filters\":[],\"aggregate_columns\":[]}".to_string());
     let table_page=RwSignal::new(None::<(String,serde_json::Value)>);
+    let document_path=RwSignal::new(String::new());
+    let document_next=RwSignal::new(None::<serde_json::Value>);
     let code_path=RwSignal::new(String::new());
     let code_query=RwSignal::new(String::new());
     let code_cursor=RwSignal::new(serde_json::Value::Null);
@@ -552,6 +554,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
             git_review.set(String::new());
             git_commit.set(String::new());
             table_page.set(None);
+            document_next.set(None);
             zip_hash.set(String::new());
             image_hash.set(String::new());
             code_cursor.set(serde_json::Value::Null);symbol_offset.set(None);symbol_hash.set(String::new());
@@ -608,6 +611,7 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     if value["status"]=="ok" && name=="preview_git_commit"{git_review.set(value["data"]["review_id"].as_str().unwrap_or_default().into());}
                     if value["status"]=="ok" && name=="git_log"{git_commit.set(value["data"]["base_commit"].as_str().unwrap_or_default().into());}
                     if name=="read_table"||name=="query_table"{table_page.set(None);if value["status"]=="ok"&&!value["data"]["next_offset"].is_null(){let mut next=args.clone();next["offset"]=value["data"]["next_offset"].clone();next["expected_sha256"]=value["data"]["sha256"].clone();table_page.set(Some((name.clone(),next)));}}
+                    if name=="extract_document_text"{document_next.set(None);if value["status"]=="ok"&&!value["data"]["next_offset"].is_null(){let mut next=args.clone();next["offset"]=value["data"]["next_offset"].clone();next["expected_sha256"]=value["data"]["sha256"].clone();document_next.set(Some(next));}}
                     if value["status"]=="ok" && name=="calculate_sha256" {
                         let hash=value["data"]["sha256"].as_str().unwrap_or_default().to_string();
                         if args["path"].as_str()==Some(binary_source.get_untracked().as_str()){binary_source_hash.set(hash.clone());}
@@ -702,6 +706,13 @@ fn ToolWorkbench(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) 
                     <textarea aria-label="Structured table query JSON" style=CONTROL_STYLE rows="4" prop:value=move||table_query.get() on:input=move|ev|{table_query.set(event_target_value(&ev));table_page.set(None);}></textarea>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||table_path.get().is_empty() on:click=move |_|{match serde_json::from_str::<serde_json::Value>(&table_query.get()){Ok(mut args) if args.is_object()=>{args["path"]=json!(table_path.get());execute("query_table".into(),args);},_=>error.set(Some("Enter a JSON object with columns, filters and/or aggregate_columns.".into()))}}>"Run structured query"</button>
                     <button style=CONTROL_STYLE disabled=move||busy.get()||table_page.get().is_none() on:click=move |_|{if let Some((name,args))=table_page.get(){execute(name,args);}}>"Next table page"</button>
+                </details>
+                <details><summary>"Read DOCX text"</summary>
+                    <p>"Main-body text only, with reported omissions. No layout, page numbers, PDF, OCR or image extraction. External references and field instructions are never opened or evaluated."</p>
+                    <input aria-label="DOCX file path" style=CONTROL_STYLE placeholder="files/document.docx" prop:value=move||document_path.get() on:input=move|ev|{document_path.set(event_target_value(&ev));document_next.set(None);}/>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||document_path.get().is_empty() on:click=move |_|execute("document_info".into(),json!({"path":document_path.get()}))>"Inspect document"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||document_path.get().is_empty() on:click=move |_|{document_next.set(None);execute("extract_document_text".into(),json!({"path":document_path.get()}));}>"Read body text"</button>
+                    <button style=CONTROL_STYLE disabled=move||busy.get()||document_next.get().is_none() on:click=move |_|{if let Some(args)=document_next.get(){execute("extract_document_text".into(),args);}}>"Continue document"</button>
                 </details>
                 {move||{
                     let value=result.get();
