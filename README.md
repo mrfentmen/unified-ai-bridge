@@ -174,7 +174,7 @@ docs/                     Verification and next steps
 
 ## Where this is going
 
-The aim is a dependable local toolbox for normal web chats: documents, coding, research, and eventually application workflows. The next work is reliability across all providers, stronger approval/recovery acceptance, longer-running commands, and reviewed integrations. Desktop input, rich document editing, and general web-fetch tools are **not shipped features**. See the [plan](docs/PLAN.md).
+The aim is a dependable local toolbox for normal web chats: documents, coding, research, and eventually application workflows. The next work is unattended-job reliability, stronger approval/recovery acceptance, longer-running commands, and reviewed integrations. Desktop input, rich document editing, and general web-fetch tools are **not shipped features**. See the [plan](docs/PLAN.md) and [24-task backlog](docs/TASKS.md) for proposed tools and completion checks.
 
 This project takes inspiration from [ZeroScript Free](https://github.com/sebattfg/ZeroScript-Free) and other local-tool projects. Their behavior helped inform the design; their source was not copied into this Rust implementation.
 

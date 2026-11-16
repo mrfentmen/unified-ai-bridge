@@ -2,6 +2,8 @@
 
 The bridge should make everyday work in local folders dependable before taking on more kinds of applications. The existing host, protocol, and extension stay in place; this is an incremental project.
 
+The actionable backlog is [TASKS.md](TASKS.md): 24 open tasks with proposed tools, dependencies and completion checks. Start with UAB-01–07 for unattended reliability and long-running commands, then expand coding, chat-file transfer, document/media tools and application control. This page remains the high-level plan; [VERIFICATION.md](VERIFICATION.md) is the evidence record.
+
 ## Already implemented
 
 - Rust/WASM adapters for ChatGPT, Claude, DeepSeek, Gemini, Grok, Qwen, and Kimi, including a separate Grok-on-X path.
