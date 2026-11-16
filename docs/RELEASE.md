@@ -7,4 +7,6 @@ Related fixes protect create-only writes and trash moves from destination replac
 
 Regression tests use real temporary files, including concurrent destination creation, symlink swaps, source edits and policy changes. CI runs workspace tests and self-tests on Linux and macOS, plus the pinned Oxichrome build and isolated native-host installation. Tagged releases publish only after these checks pass.
 
+Local verification: 81 workspace tests and 41 self-tests passed. Chrome's extension card, Kimi panel and host hello agreed on 0.4.7. Live manual preview/apply, denied deletion, approved trash, denied restore and approved restore preserved the expected file hash; the audit chain remained valid. These checks used the in-page panel, extension controls and toolbar popup. They do not replace the outstanding model-driven provider acceptance matrix.
+
 Build from source following [the installation guide](https://github.com/mrfentmen/unified-ai-bridge/blob/main/packaging/DEPLOY.md). Reload the extension and provider tabs after deployment, then check that the Chrome card, panel and host hello all report 0.4.7. Existing provider verification and limitations are recorded in [the verification guide](https://github.com/mrfentmen/unified-ai-bridge/blob/main/docs/VERIFICATION.md); this patch does not claim new provider acceptance or physical Intel Mac testing.

@@ -10,6 +10,8 @@ The bridge should make everyday work in local folders dependable before taking o
 - File previews, hash-checked edits, append/copy/glob/tree/batch-read/diff tools, recoverable deletion, and restore history.
 - Fixed command grants, bounded output and timeouts, plus reviewed native stdio MCP server discovery and calls.
 - A popup, side panel, in-page controls, activity filters, tool runner, and installation diagnostics.
+- Strict-mode approval across profiles, no-overwrite file moves, approval-wait revalidation, and regression tests for concurrent file/policy changes.
+- GitHub workflows for tests, isolated extension/native packaging, and publication of tagged releases after checks pass.
 
 Implementation is not the same as acceptance. [Verification](VERIFICATION.md) records which behavior has actually been exercised.
 
@@ -23,7 +25,7 @@ Qwen's background rendering and candidate selection need clear, predictable hand
 
 Add multi-file patch preview and recovery without promising filesystem-wide atomicity. Improve large-file streaming and private-file exclusion controls. Add command progress, cancellation, and bounded polling while preserving explicit executable/argument grants.
 
-Finish live acceptance of preview, apply, delete, and restore controls from both the in-page panel and extension surfaces. Add session-scoped permission grants only with explicit revocation and expiry semantics.
+Expand the 0.4.7 manual preview/apply/delete/restore acceptance to every approval surface and model-driven result delivery. Add session-scoped permission grants only with explicit revocation and expiry semantics.
 
 ## Then: expand integrations carefully
 
