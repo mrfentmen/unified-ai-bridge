@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.4.6** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.4.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -141,6 +141,7 @@ macOS may ask for folder, Screen Recording, or Accessibility access. Rebuilding 
 ## Checks and troubleshooting
 
 ```sh
+cargo +stable run --locked -p bridge-tooling -- icons
 cargo +stable test --workspace --locked
 cargo +stable run --locked -p bridge-native -- selftest
 
