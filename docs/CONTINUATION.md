@@ -26,10 +26,14 @@ In 0.5.24, setup messages also record an unconfirmed submission in conversation 
 
 The sender attempts a submit control once. If the website does not acknowledge submission, the result remains saved and automatic resubmission stops. Inspect the chat before using **Send pending result**. This prevents repeated clicks from submitting duplicate messages during slow responses. A confirmed context-full rejection can use the handoff path.
 
+In 0.5.25, a new user-message node with empty text is treated as an unfinished transcript render. The saved result waits. If the complete matching result later appears under a new message ID, delivery is acknowledged without another click. A different nonempty message or regenerated response still invalidates the old result. Qwen can still require the tab to be brought into view for its website to render the messages; the bridge does not automatically focus tabs.
+
+Qwen's code editor can omit tool-call lines. For a completed reply explicitly labeled `bridge-tool` or showing the tool sentinel, the bridge sends a visible **not executed** formatting notice asking for the complete plain-text sentinel form. It never executes the editor's visible prefix. There are at most two automatic corrections per task, persisted across reloads. Corrections retain the original task and host allowance, preserve user drafts and use the normal saved-delivery checks. Multiple candidate answers still require the user's selection. An ordinary code example without an explicit tool marker does not trigger correction.
+
 Transfers refuse unknown/running tool outcomes, running/interrupted command jobs, unrelated drafts, changed workspaces, exhausted budgets and stopped tasks. They never repeat a local tool call to make the new chat appear current.
 
 ## Boundaries
 
-Fresh-chat automation is currently implemented for ChatGPT. Other providers keep their existing result delivery and session recovery. Their website-specific handoff controls require separate implementation and live verification. Quota/login gates, Qwen candidate selection, Gemini setup drafts, macOS consent and manual approvals can still require user attention. YOLO changes only its documented local-write approvals.
+Fresh-chat automation is currently implemented for ChatGPT. Other providers keep their existing result delivery and session recovery. Their website-specific handoff controls require separate implementation and live verification. Quota/login gates, Qwen rendering/candidate selection, website setup failures, macOS consent and manual approvals can still require user attention. Gemini's 0.5.25 setup is shorter and excludes its hidden accessibility announcement when confirming delivery. YOLO changes only its documented local-write approvals.
 
 This does not yet implement scheduling, arbitrary desktop input, automatic asset downloads/uploads, game-engine control or video editing. Ordinary source/asset file work uses the existing tools. Running a game engine, renderer or media converter requires a reviewed command or application integration. See [the task backlog](TASKS.md) and [verification evidence](VERIFICATION.md).

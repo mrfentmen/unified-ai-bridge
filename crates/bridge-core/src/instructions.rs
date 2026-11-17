@@ -115,9 +115,19 @@ Keep your own attribution and timestamps. Do not merge all agents into one concl
         out.push_str(&format!("### {}\n", category.label()));
         for tool in profile.tools().filter(|tool| tool.category == category) {
             let write = if tool.writes { " [writes]" } else { "" };
+            // Gemini's current editor truncates long setup drafts. Keep the
+            // complete protocol, rules and argument summaries, but avoid
+            // repeating every catalog qualification already explained above.
+            let description = if agent == Agent::Gemini {
+                tool.description.split_once(". ")
+                    .map(|(first, _)| first)
+                    .unwrap_or(tool.description)
+            } else {
+                tool.description
+            };
             out.push_str(&format!(
                 "- `{}`{} — {}\n  Arguments: {}\n",
-                tool.name, write, tool.description, tool.arguments
+                tool.name, write, description, tool.arguments
             ));
         }
         out.push('\n');
@@ -144,6 +154,33 @@ mod tests {
         }
         assert!(text.contains("AGENTS/CHATGPT"));
         assert!(!text.contains("agent\":"));
+    }
+
+    #[test]
+    fn gemini_setup_fits_editor_without_dropping_tools_arguments_or_rules() {
+        for profile in [Profile::General, Profile::Code, Profile::Research] {
+            // Leave room for real paths and line-break normalization below
+            // the observed roughly 32K editor ceiling.
+            let root = format!("/workspace/{}", "a".repeat(1000));
+            let text = build_profile_instructions(Agent::Gemini, &root, "Gemini", profile, PermissionMode::Strict, true);
+            assert!(text.chars().count() < 30_000, "{}: {} characters", profile.name(), text.chars().count());
+            assert!(text.contains(&root));
+            assert!(text.contains("Read-only: true"));
+            assert!(text.contains("Connection setup is not a task"));
+            assert!(text.contains("Never retry an interrupted mutation"));
+            assert!(text.contains("no `agent` or `provider` field"));
+            for tool in profile.tools() {
+                assert!(text.contains(&format!("`{}`", tool.name)), "missing {}", tool.name);
+                assert!(text.contains(&format!("Arguments: {}", tool.arguments)), "missing arguments for {}", tool.name);
+                if tool.writes { assert!(text.contains(&format!("`{}` [writes]", tool.name))); }
+            }
+            if profile == Profile::Research {
+                assert!(text.contains("`SHARED/datasets/` is immutable"));
+            } else {
+                assert!(!text.contains("`inspect_dataset`"));
+                assert!(text.contains("Traversal and symlink escapes are denied"));
+            }
+        }
     }
 
     #[test]

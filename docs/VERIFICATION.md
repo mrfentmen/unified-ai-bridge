@@ -1,5 +1,51 @@
 # Verification record
 
+## Provider delivery fixes 0.5.25 — November 17, 2026
+
+This milestone fixes observed website adapter failures while preserving strict tool parsing, host-issued identity and workspace policy. Tests used the existing **general / standard** scratch workspace, with **16 calls/task and 4/response**, YOLO off and network off. No archaeology files or OS permission settings were changed. The current machine is Apple Silicon / macOS 27.0.1; physical older Intel acceptance remains open.
+
+DeepSeek now scans its final-answer container and waits for the observed per-turn **Read aloud** completion control. Gemini and Grok.com read actual user-message text rather than hidden accessibility headings. Gemini's shorter catalog keeps every tool, argument summary, protocol and general policy rule; its complete draft is checked before submission. The panel is now at the top right with a bounded scroll area, leaving the bottom composer available. Saved result reconciliation waits for empty message nodes to render and recognizes a complete delayed acknowledgement without submitting again.
+
+The following are **real website-model calls**. Each sequence read `files/budget-0524.txt`, created the named file, read it back and received a traversal denial. Independent disk and read-only SQLite checks found **one successful write receipt and one committed recovery record per file**, with correct agent/workspace attribution. All seven attempted escape files remained absent. New files have no prior-content checkpoint; their committed change records provide recovery evidence.
+
+| Provider | File / exact bytes (no newline) | Actual outcome and intervention |
+|---|---|---|
+| DeepSeek | `files/deepseek-0525.txt` · 25 · `DeepSeek 0.5.25 verified.` | Read **09:57:12.037Z**, create **09:57:17.313Z**, read-back **09:57:22.772Z**, denial **09:57:28.239Z**; results and stopped summary visible. Earlier 0.5.24 write never executed |
+| Gemini | `files/gemini-0525.txt` · 23 · `Gemini 0.5.25 verified.` | Read **10:00:09.838Z**, create **10:00:30.287Z**, read-back **10:00:44.344Z**, denial **10:00:52.491Z**. Deliberate setup reinjection submitted and acknowledged automatically after the prompt-length fix |
+| ChatGPT | `files/chatgpt-0525.txt` · 24 · `ChatGPT 0.5.25 verified.` | Created **10:04:03.122Z**, then the real context-full gate blocked delivery. Reload preserved the saved result; **Continue in fresh chat** prepared/bound at **10:06:00.094Z / 10:06:04.126Z** with **14 remaining calls**. Read-back **10:06:08.392Z**, denial and final summary arrived in the destination. Recovered, not uninterrupted |
+| Claude | `files/claude-0525.txt` · 23 · `Claude 0.5.25 verified.` | Fresh automatic setup, read **10:06:56.632Z**, create **10:07:03.049Z**, read-back **10:07:10.603Z**, denial **10:07:15.883Z**. Results and final summary visible; transient thinking warning cleared |
+| Grok.com | `files/grok-0525.txt` · 21 · `Grok 0.5.25 verified.` | Read **10:08:39.501Z**, create **10:08:58.534Z**; false acknowledgement error required the Grok fix/reload. Read-back **10:10:48.523Z** and denial **10:10:57.527Z** returned. Then **Free tier limit reached** blocked a clean retest. Recovered, not uninterrupted; `grok-0525-final.txt` absent |
+| Qwen | `files/qwen-0525.txt` · 21 · `Qwen 0.5.25 verified.` | Website Send was needed once for initial setup. Read **10:14:41.118Z**, create **10:14:56.651Z**, read-back **10:17:21.947Z**, denial **10:17:30.919Z**. Accidental tab closure/Playwright disconnect required reopening the same chat; foreground rendering was needed. Results and final summary visible; not an unattended pass |
+| Kimi | `files/kimi-0525.txt` · 21 · `Kimi 0.5.25 verified.` | Automatic setup passed. After sending the explicit task with the normal website button: read **10:20:18.457Z**, create **10:20:28.350Z**, read-back **10:20:37.931Z**, denial **10:20:48.762Z**. Results, stopped summary and empty composer verified; disk hash independently matched |
+
+File SHA256 values, in table order:
+
+```text
+deepseek 287942a8fc98116ac06faed377c288252e87d6ecbd4c1893cd80cacf4feb045e
+gemini   20e22da2e776daf8a44877bf15b34a3c3be67953a79f47a1aaabd035d6277bac
+chatgpt  34c4c77fdf2c67616049feb87fcc4d3435b492db1c236f86703fa40406741bcd
+claude   cf5da7eca3fbf3cb26cf8edba56d8174a59d3f8347e0aeec424d38a5bcb3f8fa
+grok     db85e53b6bca961274d779369c808cfb86849260f0f03d423ccab5e076e776ae
+qwen     ded62135e91a73297ed3f3caab1ffdd1b30ab911e04fa7818fc16f8050bfb4e1
+kimi     74b6bc3ad3ef58218f31086e066a7fe65369158d4255f3174c5774a012c106c0
+```
+
+Development failures are retained: Gemini initially truncated a setup draft from **33,368** to **31,778** non-newline characters; complete-draft validation refused submission. The revised setup was about **26,571** characters and delivered. Grok's hidden “You” heading caused an incorrect stale-result error before the adapter fix. Qwen's new empty user-message node caused the same false invalidation before the delayed-render reconciliation change. The latter has tests for empty transcripts, full acknowledgements, changed user/assistant turns, wrong conversations, partial/shared-prefix results and no automatic uncertain resubmission. Its initial test compile failed on a temporary string lifetime; the assertion now binds that string explicitly.
+
+Several 0.5.25 bundles were built during this work. The table records each actual attempt; it is **not an uninterrupted all-provider acceptance run against one final WASM hash**. Raw transcripts, receipts, screenshots and logs remain private in ignored `docs/evidence/0.5.25/`.
+
+Final package validation: pinned native/tooling/WASM builds exited 0; source and emitted manifest both say **0.5.25**, confirmed by the Chrome card, shadow panel and new hello at **10:38:06.119Z**. The final full suite passed **250 tests, 0 failed, 1 ignored**, with documentation tests passing. **48 targeted core/extension tests** passed before deployment. **41 installed self-tests** passed against the same native SHA256. Doctor passed config, native manifest/binary, SQLite and the **1,022 matching DB/file audit entries** at its recorded snapshot. The previously verified long ignored command test was not rerun.
+
+Final native SHA256: `cf0b23d701586f66c37793a8f5b8d61bbfc2cca3ee13f6ef571b65e9f320be62`. Final WASM SHA256: `de23acf8f994dd1c38c8ff29b16449af99c60be1fe94f6a4de65ac61e329b817`.
+
+**Qwen code-editor recovery, final bundle:** reproduced a stalled real fenced `bridge-tool` request. The bridge now sends an explicit `adapter_incomplete_render`, `executed:false` notice and requests the full plain-text sentinel form, at most twice per task. It preserves the original task and persists the correction reservation; no editor prefix is executed. After reload, the original stalled read recovered automatically at **10:38:25.833Z**. A second explicit task emitted a fenced create request, received one automatic formatting notice, re-emitted the complete request and created `files/qwen-0525-repaired.txt` at **10:39:10.547Z**. Read-back completed at **10:39:22.019Z** and both results plus the stopped summary appeared in the conversation. Independent disk/SQLite checks found exactly **30 bytes**, `Qwen fenced request recovered.` with no newline, SHA256 `5b6b85b9092dd96552165bbe1cf3838d1b277703e9b04c0aef801a2b7254bd54`, one successful write, one committed change and the **same original task ID** on write and read.
+
+A third Qwen task exercised a fenced traversal request. While hidden for over 30 seconds, Qwen created an empty user node and rendered only a partial answer. The saved formatting notice remained pending instead of being discarded or resent; bringing the tab into view acknowledged it and resumed parsing. The host denied the complete request at **10:40:48.104Z**; denial and final summary returned, and `/Users/test/uab-0525-qwen-repair-escape.txt` remained absent. Exactly three formatting notices were observed across these three separate tasks. New chat → Back then restored one connected panel and an empty composer, with no duplicate file change. Qwen still needs foreground rendering; this verifies recovery from that state, not unattended background execution. An earlier read-only retry showed the website's “Unknown error”; the original request later completed after focus, and the redundant unsent test draft was cleared without submission.
+
+**Gemini follow-up:** fresh automatic setup completed without manually sending its draft. A real read of `files/gemini-0525.txt` at **10:31:41.610Z** returned the exact content; hidden rendering delayed the visible final summary until focus. Reload and New chat → Back on the final bundle retained one panel and re-registered at **10:40:15.088Z**. Setup did not execute tools. These final lifecycle checks cover Gemini and Qwen; they do not replace the earlier all-provider matrix.
+
+**Still open:** a clean Grok retest after quota reset, Grok-on-X acceptance on this version, fully unattended Qwen setup/rendering, remaining popup/docked-panel approval and in-flight workspace tests, approved uploads and generated-artifact discovery, preview/application integrations, complete task reports/scheduling, stable signing/TCC and physical older Intel hardware. Grok's observed quota notice was not identified by the panel's current narrow notice selector; no account limit was bypassed.
+
 ## Workspace task budgets and setup delivery 0.5.24 — November 17, 2026
 
 Installed **0.5.24 / protocol 8** in the existing general scratch workspace. Source, emitted manifest, Chrome extension card, in-page panel and native hello agree. This is a shared control/reliability milestone for any project type, not complete unattended game or movie production.
@@ -23,6 +69,8 @@ Initial test failures and live limitations are retained. One new isolation test 
 Native SHA256: `68ffb7ab98d7a21822bef424770f9f1ed656c79fbc7785cac2747478c64643c9`. Final WASM SHA256: `e3bfda86ac7ba71fbf4c190eae7156e778acba226579bbce1ac3078ece2deacb`. Private raw evidence is in ignored `docs/evidence/0.5.24/`. The prior 0.5.23 commit `aa5e175` passed Linux tests, Intel macOS tests and packaging in [CI run 44051551412](https://github.com/mrfentmen/unified-ai-bridge/actions/runs/44051551412); that is not CI evidence for 0.5.24.
 
 **Still open:** full provider acceptance on this build, hands-off recovery on other providers, actual docked-side-panel/popup-specific acceptance, image/file exchange, broader app/game/media controls, whole-task scheduling/reports, stable macOS permission persistence and physical older Intel testing. This pass exercised the side-panel route in a Chrome tab through accessibility controls, not a docked panel. No archaeology files were modified; YOLO and network access remained off.
+
+Follow-up provider checks on **0.5.24** found two adapter defects. DeepSeek read the real budget file at **09:35:34.576Z**, but stable-looking pauses in an unfinished reply were marked malformed and consumed before the final complete JSON appeared. A later DOM inspection confirmed the complete `write_document` block; no create-file receipt was produced. Its loading indicator disappears before streaming finishes. The final-answer container and per-turn **Read aloud** control were observed separately from its reasoning and during actual streaming. Gemini completed read (**09:40:31.091Z**), create (**09:40:57.816Z**), read-back (**09:41:15.912Z**) and traversal denial (**09:41:33.911Z**). `files/gemini-0524.txt` contains `Gemini 0.5.24 verified.` with no newline (23 bytes), SHA256 `032b80dd88c8c26af0e79f46e782f3ef4a6ff8eb57bb052c89f49681f9f2df6e`. The escape file remained absent. Gemini required dismissing a promotional modal and manually submitting the bridge's setup draft. Its hidden truncated “You said” announcement then prevented acknowledgement of visibly delivered results, leaving a false stale-turn error. These are failures of unattended acceptance, not passes. Fixes and retests belong to the next build.
 
 ## ChatGPT continuation and durable delivery 0.5.23 — November 17, 2026
 

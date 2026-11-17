@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.24** — Choose workspace tool-call budgets before a task, and continue long ChatGPT tasks in a fresh chat without resetting their allowance. Automatic context-full handoff, draft protection and real file creation/read-back passed in Chrome on 0.5.23. Other provider recovery, application workflows and fully unattended operation remain unfinished. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.25** — Real read/create/read-back and denied-path results have returned through all seven provider identities during this milestone. Some runs required recovery or manual attention. This release fixes provider message extraction, completion detection and result tracking; application workflows and fully unattended operation remain unfinished. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -78,16 +78,16 @@ The implementation is Rust throughout: **Oxichrome** generates the extension pac
 
 | Website | What has been verified | Notes |
 | --- | --- | --- |
-| ChatGPT | Read → create → read-back; denied traversal; approved patch; response budget | 0.5.21; navigation/background passed. Later result delivery hit the site's context-full limit |
-| Claude | Read → create → read-back; denied traversal; approved patch; navigation/background | 0.5.21; transient warning during thinking; fenced `bridge-tool` JSON preserves quotes |
-| DeepSeek | Read → create → read-back; denied traversal; approved patch; navigation/background | 0.5.21; returned through the known history entry after New chat |
-| Gemini | Read → create → read-back; denied traversal; approved patch | 0.5.21; native session survives navigation, but a generated setup draft can stall reconnection |
-| Grok (`grok.com`) | Connected on 0.5.21 | Website's free-tier limit blocked file execution |
+| ChatGPT | Read → create → read-back; denied traversal on 0.5.25 | Context-full after writing; saved result and remaining budget recovered through fresh-chat handoff |
+| Claude | Read → create → read-back; denied traversal on 0.5.25 | Automatic fresh setup; temporary thinking warning cleared |
+| DeepSeek | Read → create → read-back; denied traversal on 0.5.25 | Completion detection fixed after a partially streamed call stalled on 0.5.24 |
+| Gemini | Read → create → read-back; denied traversal on 0.5.25 | Shorter setup and actual prompt-text extraction fixed truncation/acknowledgement failures; fresh setup also retested |
+| Grok (`grok.com`) | Read → create → read-back; denied traversal on 0.5.25 | Required adapter fix/reload after writing; quota blocked a clean uninterrupted retest |
 | Grok on X | Read → create on 0.5.21; full loop previously on 0.5.7 | Current 20-question daily limit blocked the remaining steps |
-| Qwen | Read → create → read-back; denied traversal; approved patch | 0.5.21; needed foreground rendering and a choice between candidate answers |
-| Kimi | Read → create → read-back; denied traversal; approved patch; navigation/background | 0.5.21; transient warning during thinking; generated SVG import was separately verified on 0.5.0 |
+| Qwen | Read → create → read-back; denied traversal on 0.5.25 | Setup needed website Send and the loop needed foreground rendering. Code-editor calls use a bounded formatting correction |
+| Kimi | Read → create → read-back; denied traversal on 0.5.25 | Automatic fresh setup passed; generated SVG import was separately verified on 0.5.0 |
 
-Qwen sometimes hides rendered message text in background tabs. Its session stays connected, but tool execution may wait until you bring the tab into view. All adapters depend on website markup and can need updates when a provider changes its interface.
+Qwen sometimes hides rendered message text in background tabs. Its session stays connected, but tool execution may wait until you bring the tab into view. The 0.5.25 rows include development builds and interventions, not one uninterrupted acceptance run against the final bundle. Earlier patch/navigation/background checks remain documented separately. All adapters depend on website markup and can need updates when a provider changes its interface.
 
 The stale-session recovery bug found on 0.5.21 is fixed in 0.5.22: ten hidden verification tabs registered again after a host restart, with no repeated writes. This does not resolve website setup drafts, context limits or account quotas. YOLO turns off after restart; ordinary tool and command permissions still apply.
 

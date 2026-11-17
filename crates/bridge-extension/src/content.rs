@@ -25,7 +25,7 @@ use crate::js;
 use crate::model::{ActivityView, ApprovalView, BackgroundResponse, StatusView};
 #[path = "chat_recovery.rs"]
 mod recovery;
-use bridge_core::recovery::{DeliveryRetry, WebsiteBlock};
+use bridge_core::recovery::{pending_result_state, DeliveryRetry, FormatRepairBudget, PendingResultState, WebsiteBlock};
 
 const POLL_MS: i32 = 2_000;
 const DETECT_MS: i32 = 1_500;
@@ -262,6 +262,8 @@ struct ConversationMemory {
     pending: Option<SavedResult>,
     #[serde(default)]
     instruction_submission: Option<InstructionSubmission>,
+    #[serde(default)]
+    format_repairs: FormatRepairBudget,
 }
 
 fn memory_key(state: &ContentState) -> Option<String> {
@@ -364,7 +366,8 @@ fn build_ui(document: &Document) -> Result<Ui, JsValue> {
             ("all", "initial"),
             ("position", "fixed"),
             ("right", "18px"),
-            ("bottom", "18px"),
+            // Keep the panel clear of the providers' bottom-anchored composer.
+            ("top", "18px"),
             ("z-index", "2147483646"),
             (
                 "font-family",
@@ -444,7 +447,7 @@ fn build_ui(document: &Document) -> Result<Ui, JsValue> {
     );
 
     let body = make(document, "div", &[], &root)?;
-    style(&body, &[("padding", "11px 12px 10px")]);
+    style(&body, &[("padding", "11px 12px 10px"), ("max-height", "60vh"), ("overflow-y", "auto")]);
     let provider_line = make(document, "div", &[], &body)?;
     style(
         &provider_line,
@@ -1120,7 +1123,7 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
     let submitted = shared.borrow().memory.instruction_submission.clone();
     if let Some(submitted) = submitted {
         let confirmed = submitted.context_hash == context_hash && adapter.last_user(&document).is_some_and(|user|
-            bridge_core::recovery::submitted_message_matches(submitted.preceding_user.as_deref(),&adapter.user_id(&user),&instructions,&assistant_text(&user)));
+            adapter.user_text(&user).ok().is_some_and(|text| bridge_core::recovery::submitted_message_matches(submitted.preceding_user.as_deref(),&adapter.user_id(&user),&instructions,&text)));
         if confirmed {
             let mut s=shared.borrow_mut();
             s.connected=true;
@@ -1138,7 +1141,9 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
         if automatic {
             let mut s=shared.borrow_mut();
             s.auto_attempted=true;
-            s.error=Some("Setup submission is unconfirmed. Automatic retries are paused. Inspect this conversation before clicking Inject tool instructions.".into());
+            if s.error.is_none() {
+                s.error=Some("Setup submission is unconfirmed. Automatic retries are paused. Inspect this conversation before clicking Inject tool instructions.".into());
+            }
             render(&s);
             return;
         }
@@ -1519,7 +1524,15 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
     let Some(user) = adapter.last_user(&document) else {
         return;
     };
-    let user_text = assistant_text(&user);
+    let user_text = match adapter.user_text(&user) {
+        Ok(text) => text,
+        Err(warning) => {
+            let mut current = state.borrow_mut();
+            current.adapter_warning = Some(warning);
+            render(&current);
+            return;
+        }
+    };
     if user_text.trim().is_empty() {
         let mut current = state.borrow_mut();
         current.adapter_warning = Some("Waiting for the latest user message to render. Bring this chat into view; empty or hidden message text cannot authorize tool execution.".into());
@@ -1576,6 +1589,40 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
     let text = match adapter.reply_text(&node) {
         Ok(text) => text,
         Err(error) => {
+            if adapter.qwen_tool_editor_complete(&node) {
+                // The editor may omit lines. Ask for a complete plain-text
+                // rendering; never interpret or execute its visible prefix.
+                let text = assistant_text(&node);
+                if state.borrow().last_text != text {
+                    let mut current = state.borrow_mut();
+                    current.last_text = text;
+                    current.stable_since_ms = js::now_ms();
+                    current.adapter_warning = Some(error);
+                    render(&current);
+                    drop(current);
+                    let wake = state.clone();
+                    js::schedule(3_100, move || detect_tool_request(wake));
+                    return;
+                }
+                if js::now_ms() - state.borrow().stable_since_ms < 3_000.0 { return; }
+                let mut current = state.borrow_mut();
+                if current.memory.format_repairs.reserve(&task_id, &turn.assistant) {
+                    current.pending_result = Some(PendingResult {
+                        text: format_tool_results(&[json!({
+                            "status":"error", "code":"adapter_incomplete_render", "executed":false,
+                            "error":"Qwen displayed the requested tool JSON in a code editor that may hide lines. The bridge did not execute any call from that reply. Re-emit the same intended request as ONE plain-text line: [[BRIDGE_TOOL]] followed by the complete strict JSON object followed by [[/BRIDGE_TOOL]]. No Markdown fence, backticks, code editor, or list. Preserve every argument exactly. This is a formatting correction for the original task, not a new task or extra call allowance. Wait for the actual result. At most two automatic formatting corrections are available per task."
+                        })]),
+                        turn: turn.clone(), draft: Rc::default(), retry: Rc::default(),
+                    });
+                    current.adapter_warning = Some("Qwen hid the tool request in a code editor. A formatting correction is queued; no local operation from that reply was executed.".into());
+                    save_memory(&current);
+                    render(&current);
+                    drop(current);
+                    let shared = state.clone();
+                    spawn_local(async move { flush_pending_result(shared).await; });
+                    return;
+                }
+            }
             let mut current = state.borrow_mut();
             current.adapter_warning = Some(error);
             render(&current);
@@ -1754,15 +1801,43 @@ async fn flush_pending_result(state: Rc<RefCell<ContentState>>) {
         return;
     };
     let adapter = state.borrow().adapter;
-    if adapter.delivery_turn(&document).is_none()
-        && adapter.last_user(&document).is_none_or(|user|adapter.user_id(&user)==pending.turn.user) {
-        // During hydration/background rendering, a missing turn is not proof
-        // that the queued result became stale. Keep it until identity resolves.
-        return;
-    }
-    if !delivery_current(&state, epoch, &pending.turn) {
-        discard_stale_result(&state, epoch);
-        return;
+    let latest_user = match adapter.last_user(&document) {
+        Some(user) => match adapter.user_text(&user) {
+            Ok(text) => Some((adapter.user_id(&user), text)),
+            Err(warning) => {
+                state.borrow_mut().adapter_warning = Some(warning);
+                render(&state.borrow());
+                return;
+            }
+        },
+        None => None,
+    };
+    match pending_result_state(
+        &pending.turn,
+        adapter.delivery_turn(&document).as_ref(),
+        latest_user.as_ref().map(|(id, text)| (id.as_str(), text.as_str())),
+        &pending.text,
+        pending.retry.borrow().submission_uncertain,
+    ) {
+        PendingResultState::WaitingForTranscript => {
+            state.borrow_mut().adapter_warning = Some("A tool result is saved while this website renders its latest message. Bring the chat into view; an unconfirmed submission will not be sent twice.".into());
+            render(&state.borrow());
+            return;
+        }
+        PendingResultState::Delivered => {
+            let mut current = state.borrow_mut();
+            current.pending_result = None;
+            current.error = None;
+            current.adapter_warning = None;
+            save_memory(&current);
+            render(&current);
+            return;
+        }
+        PendingResultState::Stale => {
+            discard_stale_result(&state, epoch);
+            return;
+        }
+        PendingResultState::Current => {}
     }
     if let Some(block)=recovery::website_block(adapter,&document) {
         state.borrow_mut().error=Some(block.message().into());
@@ -1926,8 +2001,8 @@ fn instructions_already_sent(adapter: Adapter, document: &Document) -> bool {
         return false;
     }
     adapter.users(document).iter().any(|user| {
-        let text = assistant_text(user);
-        text.contains(INSTRUCTIONS_MARKER) || text.contains(protocol::RESULT_OPEN)
+        adapter.user_text(user).ok().is_some_and(|text|
+            text.contains(INSTRUCTIONS_MARKER) || text.contains(protocol::RESULT_OPEN))
     })
 }
 
@@ -2110,7 +2185,8 @@ impl Adapter {
                 "article[data-testid^=\"conversation-turn\"] [data-message-author-role=\"assistant\"]",
             ],
             Provider::Claude => &["[data-testid=\"assistant-message\"]", "div.font-claude-response", "div[data-is-streaming] .font-claude-response"],
-            Provider::DeepSeek => &[".ds-markdown", "div[class*=\"ds-markdown\"]"],
+            // The generic .ds-markdown also includes DeepSeek's reasoning.
+            Provider::DeepSeek => &[".ds-assistant-message-main-content"],
             Provider::Gemini => &["model-response", "message-content", ".model-response-text"],
             Provider::Grok => &["[data-testid=\"assistant-message\"]", "div[class*=\"response-content\"]", "div[class*=\"message-content\"]"],
             Provider::Qwen => &[".qwen-chat-message-assistant .response-message-content.phase-answer"],
@@ -2216,6 +2292,36 @@ impl Adapter {
         self.users(document).pop()
     }
 
+    fn user_text(self, node: &Element) -> Result<String, String> {
+        if self.provider == Provider::Grok && !self.grok_on_x {
+            // Grok.com prefixes its wrapper with an sr-only "You" heading.
+            // The actual bubble has a semantic marker independent of classes.
+            return node.query_selector("[data-bubble-text]").ok().flatten()
+                .and_then(|bubble| bubble.text_content())
+                .map(|text| text.trim().to_string())
+                .ok_or_else(|| "This website's interface changed; the adapter needs an update. Grok user prompt selector [data-bubble-text] failed; hidden announcements cannot confirm delivery or authorize tools.".into());
+        }
+        if self.provider != Provider::Gemini {
+            return Ok(assistant_text(node));
+        }
+        // Gemini's user-query wrapper includes a hidden "You said" heading
+        // with a truncated duplicate. Only the actual prompt lines can confirm
+        // delivery or authorize a task. Do not fall back to that announcement
+        // if the website changes its markup.
+        let warning = "This website's interface changed; the adapter needs an update. Gemini user prompt selector .query-text > .query-text-line failed; hidden announcements cannot confirm delivery or authorize tools.";
+        let lines = node.query_selector_all(".query-text > .query-text-line")
+            .map_err(|_| warning.to_string())?;
+        if lines.length() == 0 {
+            return Err(warning.into());
+        }
+        Ok((0..lines.length())
+            .filter_map(|i| lines.item(i)?.text_content())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string())
+    }
+
     fn response_id(self, node: &Element) -> Option<String> {
         if self.grok_on_x {
             let user = self.preceding_user(node)?;
@@ -2295,7 +2401,7 @@ impl Adapter {
             }
         }
         self.response_id(node)
-            .unwrap_or_else(|| format!("user-{:016x}", fnv1a(assistant_text(node).as_bytes())))
+            .unwrap_or_else(|| format!("user-{:016x}", fnv1a(self.user_text(node).unwrap_or_default().as_bytes())))
     }
 
     fn delivery_turn(self, document: &Document) -> Option<DeliveryTurn> {
@@ -2328,6 +2434,17 @@ impl Adapter {
     }
 
     fn reply_text(self, node: &Element) -> Result<String, String> {
+        if self.provider == Provider::DeepSeek {
+            // Observed on the actual site: loading ends before streaming does;
+            // the per-turn Read aloud control appears only after completion.
+            // A three-second pause alone can otherwise finalize partial JSON.
+            let complete = node.closest("[data-virtual-list-item-key]").ok().flatten()
+                .and_then(|turn| turn.query_selector("[role=\"button\"][aria-label=\"Read aloud\"]").ok().flatten())
+                .is_some();
+            if !complete {
+                return Err("Waiting for DeepSeek's completed response. Completion selector [data-virtual-list-item-key] [role=button][aria-label=\"Read aloud\"] is missing; if the reply has finished, this website's interface changed and the adapter needs an update.".into());
+            }
+        }
         if self.provider == Provider::Claude
             && node.get_attribute("data-cds").as_deref() == Some("AssistantMessage")
             && node.query_selector("[data-transcript-engine-root]").ok().flatten().is_none()
@@ -2382,6 +2499,24 @@ impl Adapter {
         Ok(assistant_text(&clean))
     }
 
+    fn qwen_tool_editor_complete(self, node: &Element) -> bool {
+        if self.provider != Provider::Qwen { return false; }
+        let Some(turn) = node.closest(".qwen-chat-message-assistant").ok().flatten() else { return false; };
+        if turn.query_selector_all(".response-message-content.phase-answer").ok().is_none_or(|answers| answers.length() != 1)
+            || turn.query_selector(".response-message-footer button[aria-label=\"Regenerate\"]").ok().flatten().is_none() {
+            return false;
+        }
+        let Ok(blocks) = node.query_selector_all("pre.qwen-markdown-code") else { return false; };
+        (0..blocks.length()).any(|i| {
+            let Some(block) = blocks.item(i).and_then(|n| n.dyn_into::<Element>().ok()) else { return false; };
+            let label = block.query_selector(".qwen-markdown-code-header > div:first-child").ok().flatten()
+                .and_then(|n| n.text_content()).unwrap_or_default();
+            label.trim() == protocol::BLOCK_TAG
+                || block.query_selector(".view-lines").ok().flatten().and_then(|n| n.text_content())
+                    .is_some_and(|text| text.contains(protocol::TOOL_OPEN))
+        })
+    }
+
     fn is_generating(self, document: &Document) -> bool {
         self.generating()
             .iter()
@@ -2433,9 +2568,10 @@ impl Adapter {
         if !own_draft {
             set_composer(document, &composer, text)?;
         }
-        if self.provider == Provider::Kimi && !own_draft {
-            // Lexical commits after execCommand returns. The immediate DOM may
-            // still be empty; do not claim ownership of that empty snapshot.
+        if matches!(self.provider, Provider::Kimi | Provider::Gemini) && !own_draft {
+            // Lexical and Quill normalize paragraph breaks asynchronously.
+            // Wait before claiming a draft, then verify the complete payload.
+            // Never adopt changed content merely because it became stable.
             sleep_ms(280).await;
             for _ in 0..20 {
                 check_route()?;
@@ -2448,7 +2584,7 @@ impl Adapter {
             }
             check_route()?;
             if !kimi_inserted_draft_matches(text, &composer_text(&composer)) {
-                return Err("Kimi did not finish inserting the bridge message; it was not sent.".into());
+                return Err(format!("{} did not finish inserting the bridge message; it was not sent.", self.provider.display()));
             }
         }
         // Contenteditable editors normalize line breaks differently. Compare
@@ -2615,7 +2751,7 @@ async fn wait_for_send(adapter:Adapter, document:&Document, text:&str, preceding
     let document=document.clone();
     let text=text.to_string();
     let confirmed=Rc::new(move||adapter.last_user(&document).is_some_and(|user|
-        bridge_core::recovery::submitted_message_matches(preceding_user.as_deref(),&adapter.user_id(&user),&text,&assistant_text(&user))));
+        adapter.user_text(&user).ok().is_some_and(|observed| bridge_core::recovery::submitted_message_matches(preceding_user.as_deref(),&adapter.user_id(&user),&text,&observed))));
     if confirmed() {return true;}
     let resolver:Rc<RefCell<Option<js_sys::Function>>>=Rc::default();
     let promise=js_sys::Promise::new(&mut |resolve,_|*resolver.borrow_mut()=Some(resolve));
@@ -2667,6 +2803,7 @@ mod recovery_memory_tests {
             task_id:Some("original-user".into()),task_goal:"Build a game".into(),auto_continue:true,
             pending:Some(SavedResult {text:"actual saved result".into(),turn:DeliveryTurn {conversation:"chat".into(),user:"user".into(),assistant:"response".into()},draft:Some("exact editor draft".into()),retry:DeliveryRetry {submission_uncertain:true,..Default::default()}}),
             instruction_submission:Some(InstructionSubmission{context_hash:"known".into(),preceding_user:Some("before-setup".into())}),
+            format_repairs:FormatRepairBudget::default(),
         };
         let restored:ConversationMemory=serde_json::from_str(&serde_json::to_string(&memory).unwrap()).unwrap();
         assert_eq!(restored.task_id.as_deref(),Some("original-user"));

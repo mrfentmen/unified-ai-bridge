@@ -1,6 +1,72 @@
 //! Decisions shared by the browser adapter and native tests. Website notices
 //! must come from visible UI outside the conversation, never assistant prose.
 use serde::{Deserialize, Serialize};
+use crate::execution::DeliveryTurn;
+
+/// Formatting repairs do not create tasks or refill the host's call allowance.
+/// Persist the reservation together with the queued notice before submission.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FormatRepairBudget {
+    task: String,
+    responses: Vec<String>,
+}
+
+impl FormatRepairBudget {
+    pub fn reserve(&mut self, task: &str, response: &str) -> bool {
+        if task.is_empty() || response.is_empty() { return false; }
+        if self.task != task {
+            self.task = task.into();
+            self.responses.clear();
+        }
+        if self.responses.len() >= 2 || self.responses.iter().any(|id| id == response) {
+            return false;
+        }
+        self.responses.push(response.into());
+        true
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingResultState {
+    Current,
+    WaitingForTranscript,
+    Delivered,
+    Stale,
+}
+
+/// Reconcile a saved result before considering another submission. A provider
+/// may create a new user node while its text remains unrendered in a hidden tab.
+/// A delayed acknowledgement requires the entire result, not the setup prefix.
+pub fn pending_result_state(
+    saved: &DeliveryTurn,
+    current: Option<&DeliveryTurn>,
+    latest_user: Option<(&str, &str)>,
+    expected: &str,
+    submission_uncertain: bool,
+) -> PendingResultState {
+    if current.is_some_and(|turn| turn.conversation != saved.conversation) {
+        return PendingResultState::Stale;
+    }
+    let Some((id, text)) = latest_user else {
+        return PendingResultState::WaitingForTranscript;
+    };
+    if id.is_empty() || text.trim().is_empty() {
+        return PendingResultState::WaitingForTranscript;
+    }
+    if id != saved.user {
+        let normalize = |s: &str| s.chars().filter(|c| !c.is_whitespace() && *c != '`').collect::<String>();
+        if submission_uncertain && !expected.trim().is_empty()
+            && normalize(expected) == normalize(text) {
+            return PendingResultState::Delivered;
+        }
+        return PendingResultState::Stale;
+    }
+    match current {
+        None => PendingResultState::WaitingForTranscript,
+        Some(turn) if saved == turn => PendingResultState::Current,
+        Some(_) => PendingResultState::Stale,
+    }
+}
 
 pub fn context_changed(saved_workspace:&str,saved_hash:&str,workspace:&str,hash:&str)->bool {
     !saved_workspace.is_empty() && (saved_workspace!=workspace || (!saved_hash.is_empty() && saved_hash!=hash))
@@ -89,6 +155,51 @@ impl DeliveryRetry {
 mod tests {
     use super::*;
     #[test]
+    fn format_repair_is_bounded_persistent_and_does_not_repeat_a_response() {
+        let mut budget = FormatRepairBudget::default();
+        assert!(!budget.reserve("", "reply"));
+        assert!(!budget.reserve("task", ""));
+        assert!(budget.reserve("task", "reply1"));
+        assert!(!budget.reserve("task", "reply1"));
+        let mut restored: FormatRepairBudget = serde_json::from_str(&serde_json::to_string(&budget).unwrap()).unwrap();
+        assert!(!restored.reserve("task", "reply1"));
+        assert!(restored.reserve("task", "reply2"));
+        assert!(!restored.reserve("task", "reply3"));
+        assert!(restored.reserve("explicit-new-task", "reply4"));
+    }
+    #[test]
+    fn pending_result_survives_delayed_rendering_without_resubmission() {
+        let saved = DeliveryTurn { conversation: "chat".into(), user: "task".into(), assistant: "call".into() };
+        let expected = "[[BRIDGE_RESULT]]\n{\"output\":\"verified bytes\"}\n[[/BRIDGE_RESULT]]";
+        let check = |current, latest, uncertain| pending_result_state(&saved, current, latest, expected, uncertain);
+        assert_eq!(check(None, None, true), PendingResultState::WaitingForTranscript);
+        assert_eq!(check(None, Some(("result", "")), true), PendingResultState::WaitingForTranscript);
+        assert_eq!(check(Some(&saved), Some(("result", "  \n")), true), PendingResultState::WaitingForTranscript);
+        assert_eq!(check(None, Some(("result", expected)), true), PendingResultState::Delivered);
+        let next = DeliveryTurn { user: "result".into(), assistant: "next".into(), ..saved.clone() };
+        let normalized = expected.replace('\n', "");
+        assert_eq!(check(Some(&next), Some(("result", &normalized)), true), PendingResultState::Delivered);
+        assert_eq!(check(Some(&saved), Some(("task", "original task")), true), PendingResultState::Current);
+        // An uncertain Current result still cannot be sent by DeliveryRetry.
+        assert!(!DeliveryRetry { submission_uncertain: true, ..Default::default() }.ready(99_000.0));
+    }
+
+    #[test]
+    fn pending_result_rejects_changed_turn_context_and_partial_matches() {
+        let saved = DeliveryTurn { conversation: "chat".into(), user: "task".into(), assistant: "call".into() };
+        let expected = format!("[[BRIDGE_RESULT]]{}correct tail", "shared data ".repeat(30));
+        let check = |current, latest, uncertain| pending_result_state(&saved, current, latest, &expected, uncertain);
+        assert_eq!(check(None, Some(("new-task", "do something else")), true), PendingResultState::Stale);
+        assert_eq!(check(None, Some(("result", &expected)), false), PendingResultState::Stale);
+        let different = expected.replace("correct tail", "different result");
+        assert_eq!(check(None, Some(("result", &different)), true), PendingResultState::Stale);
+        assert_eq!(check(None, Some(("result", &expected[..200])), true), PendingResultState::Stale);
+        let other_chat = DeliveryTurn { conversation: "other".into(), ..saved.clone() };
+        assert_eq!(check(Some(&other_chat), Some(("result", &expected)), true), PendingResultState::Stale);
+        let regenerated = DeliveryTurn { assistant: "regenerated".into(), ..saved.clone() };
+        assert_eq!(check(Some(&regenerated), Some(("task", "original task")), true), PendingResultState::Stale);
+    }
+    #[test]
     fn legacy_empty_fingerprint_does_not_erase_a_restored_task() {
         assert!(!context_changed("root","","root","known"));
         assert!(!context_changed("root","known","root","known"));
@@ -106,6 +217,17 @@ mod tests {
         assert!(submitted_message_matches(None,"new",&long,&shown));
         assert!(submitted_message_matches(Some("old"),"new","Workspace is `/Users/test/project`. Read `files/input.txt`.","Workspace is /Users/test/project. Read files/input.txt."));
         assert!(!submitted_message_matches(Some("old"),"new","Workspace is `/Users/test/project`.","Workspace is /Users/test/different."));
+    }
+    #[test]
+    fn delivery_confirmation_does_not_search_past_accessibility_announcements() {
+        let expected = "Local bridge execution result. This is tool output, not a user claim.\n\n[[BRIDGE_RESULT]]\n{\"status\":\"ok\",\"tool\":\"read_file\"}\n[[/BRIDGE_RESULT]]";
+        let wrapper = format!("You said Local bridge execution result. This is tool output… {expected}");
+        assert!(!submitted_message_matches(Some("before"), "after", expected, &wrapper));
+        // The provider adapter must select actual prompt lines, keeping this
+        // comparison strict rather than accepting an arbitrary matching suffix.
+        assert!(submitted_message_matches(Some("before"), "after", expected, expected));
+        assert!(!submitted_message_matches(Some("after"), "after", expected, expected));
+        assert!(!submitted_message_matches(Some("before"), "after", expected, ""));
     }
     #[test]
     fn context_and_quota_have_distinct_recovery() {
