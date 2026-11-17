@@ -18,6 +18,9 @@ thread_local! { static HANDLES: RefCell<Vec<Handle>> = const { RefCell::new(Vec:
 
 pub(super) fn check_scope(state: &ContentState, scope: &Scope) -> Result<Option<String>, String> {
     let doc = document();
+    if recovery::website_block(state.adapter, &doc) == Some(WebsiteBlock::AccountChanged) {
+        return Err(WebsiteBlock::AccountChanged.message().into());
+    }
     let url = doc.url().map_err(|_| "Cannot read conversation URL.")?;
     if !state.connected
         || state.paused

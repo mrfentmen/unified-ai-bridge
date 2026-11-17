@@ -90,11 +90,15 @@ pub fn submitted_message_matches(before:Option<&str>,after:&str,expected:&str,ob
 pub enum WebsiteBlock {
     ContextFull,
     Quota,
+    AccountChanged,
 }
 
 impl WebsiteBlock {
     pub fn from_notice(text: &str) -> Option<Self> {
         let text = text.to_lowercase();
+        if text.contains("your account changed") {
+            return Some(Self::AccountChanged);
+        }
         // Quotas take priority: a new conversation must never be used to retry
         // a request the account cannot currently make.
         if [
@@ -129,6 +133,7 @@ impl WebsiteBlock {
         match self {
             Self::ContextFull => "This conversation is full. Local results are saved. Continue in a fresh chat with a task handoff; no completed write will be rerun automatically.",
             Self::Quota => "The website reports an account usage limit. Local results are saved. Wait for the provider's limit to reset; new chats do not reset quota.",
+            Self::AccountChanged => "The website reports that your account changed. Automatic sending, file transfers and tool calls are paused. Check the signed-in account before continuing; saved results and drafts have not been resent.",
         }
     }
 }
@@ -232,6 +237,14 @@ mod tests {
     }
     #[test]
     fn context_and_quota_have_distinct_recovery() {
+        assert_eq!(
+            WebsiteBlock::from_notice("Your account changed. Send your message again"),
+            Some(WebsiteBlock::AccountChanged)
+        );
+        assert_eq!(
+            WebsiteBlock::from_notice("Chat memory full; usage limit reached; your account changed"),
+            Some(WebsiteBlock::AccountChanged)
+        );
         assert_eq!(
             WebsiteBlock::from_notice("Chat memory full\nStart a new chat with an automatic summary of this conversation, or upgrade to continue here with expanded memory in every chat."),
             Some(WebsiteBlock::ContextFull)

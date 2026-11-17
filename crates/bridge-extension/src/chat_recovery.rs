@@ -31,12 +31,16 @@ pub(super) fn website_block(adapter: Adapter, document: &Document) -> Option<Web
             continue;
         }
         if let Some(block) = WebsiteBlock::from_notice(&text) {
-            if block == WebsiteBlock::Quota {
+            if block == WebsiteBlock::AccountChanged {
                 return Some(block);
+            }
+            if block == WebsiteBlock::Quota {
+                found = Some(block);
+                continue;
             }
             // Fresh-chat automation is initially enabled only for the adapter
             // whose full-chat UI has been inspected and exercised.
-            if adapter.provider == Provider::ChatGpt {
+            if adapter.provider == Provider::ChatGpt && found.is_none() {
                 found = Some(block);
             }
         }
@@ -198,8 +202,8 @@ async fn prepare(shared: &Rc<RefCell<ContentState>>) -> Result<(), String> {
         )
     };
     let doc = document();
-    if website_block(adapter, &doc) == Some(WebsiteBlock::Quota) {
-        return Err(WebsiteBlock::Quota.message().into());
+    if let Some(block @ (WebsiteBlock::Quota | WebsiteBlock::AccountChanged)) = website_block(adapter, &doc) {
+        return Err(block.message().into());
     }
     if adapter.is_generating(&doc) {
         return Err("Wait for the assistant to finish.".into());
@@ -217,7 +221,7 @@ async fn prepare(shared: &Rc<RefCell<ContentState>>) -> Result<(), String> {
     }
     if let Some(composer) = adapter.composer(&doc) {
         let owned = pending.as_ref().is_some_and(|p| {
-            p.draft.borrow().as_deref() == Some(composer_text(&composer).as_str())
+            owned_draft_matches(adapter.provider, p.draft.borrow().as_deref(), &composer_text(&composer))
         });
         if !composer_is_empty(&composer) && !owned {
             return Err("Save or send your existing draft before moving to a fresh chat.".into());

@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use bridge_core::execution::{kimi_inserted_draft_matches, request_key, x_grok_turn, DeliveryTurn};
+use bridge_core::execution::{kimi_inserted_draft_matches, owned_draft_matches, request_key, x_grok_turn, DeliveryTurn};
 use bridge_core::protocol::{self, format_tool_results, ParsedCall};
 use bridge_core::provider::Provider;
 use serde_json::{json, Value};
@@ -324,7 +324,7 @@ fn update_workspace(shared: &Rc<RefCell<ContentState>>, id: &str, root: &str) {
         return;
     }
     if let Some(composer) = state.adapter.composer(&document()) {
-        if state.instructions_draft.borrow().as_deref() == Some(composer_text(&composer).as_str()) {
+        if owned_draft_matches(state.provider, state.instructions_draft.borrow().as_deref(), &composer_text(&composer)) {
             let _ = set_composer(&document(), &composer, "");
         }
     }
@@ -1230,8 +1230,7 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
     match adapter.composer(&document) {
         Some(composer)
             if composer_is_empty(&composer)
-                || shared.borrow().instructions_draft.borrow().as_deref()
-                    == Some(composer_text(&composer).as_str()) => {}
+                || owned_draft_matches(adapter.provider, shared.borrow().instructions_draft.borrow().as_deref(), &composer_text(&composer)) => {}
         Some(_) => {
             let mut state = shared.borrow_mut();
             if state.pending_workspace_context {
@@ -1522,6 +1521,15 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
         return;
     };
     let adapter = state.borrow().adapter;
+    if recovery::website_block(adapter, &document) == Some(WebsiteBlock::AccountChanged) {
+        let mut current = state.borrow_mut();
+        let message = WebsiteBlock::AccountChanged.message();
+        if current.error.as_deref() != Some(message) {
+            current.error = Some(message.into());
+            render(&current);
+        }
+        return;
+    }
     let Some(turn) = adapter.delivery_turn(&document) else {
         // A streaming reply may not have its permanent message ID yet. This
         // is normal on Kimi; do not report an adapter failure while it streams.
@@ -1825,6 +1833,13 @@ async fn flush_pending_result(state: Rc<RefCell<ContentState>>) {
         return;
     };
     let adapter = state.borrow().adapter;
+    // Account changes can also change rendered turn IDs. Preserve the saved
+    // result and its draft before considering stale-turn reconciliation.
+    if recovery::website_block(adapter, &document) == Some(WebsiteBlock::AccountChanged) {
+        state.borrow_mut().error = Some(WebsiteBlock::AccountChanged.message().into());
+        render(&state.borrow());
+        return;
+    }
     let latest_user = match adapter.last_user(&document) {
         Some(user) => match adapter.user_text(&user) {
             Ok(text) => Some((adapter.user_id(&user), text)),
@@ -1884,7 +1899,7 @@ async fn flush_pending_result(state: Rc<RefCell<ContentState>>) {
         .composer(&document)
         .map(|composer| {
             composer_is_empty(&composer)
-                || pending.draft.borrow().as_deref() == Some(composer_text(&composer).as_str())
+                || owned_draft_matches(adapter.provider, pending.draft.borrow().as_deref(), &composer_text(&composer))
         })
         .unwrap_or(false);
     if !composer_ready {
@@ -1957,7 +1972,7 @@ fn discard_stale_result(state: &Rc<RefCell<ContentState>>, epoch: u64) {
     let mut state = state.borrow_mut();
     if let Some(pending) = &state.pending_result {
         if let Some(composer) = state.adapter.composer(&document()) {
-            if pending.draft.borrow().as_deref() == Some(composer_text(&composer).as_str()) {
+            if owned_draft_matches(state.provider, pending.draft.borrow().as_deref(), &composer_text(&composer)) {
                 let _ = set_composer(&document(), &composer, "");
             }
         }
@@ -2584,7 +2599,7 @@ impl Adapter {
         let preceding_user = self.last_user(document).map(|user|self.user_id(&user));
         if let Some(block)=recovery::website_block(self,document) { return Err(block.message().into()); }
         let own_draft = draft.is_some_and(|draft| {
-            draft.borrow().as_deref() == Some(composer_text(&composer).as_str())
+            owned_draft_matches(self.provider, draft.borrow().as_deref(), &composer_text(&composer))
         });
         if !composer_is_empty(&composer) && !own_draft {
             return Err("message box contains a draft; the bridge will not overwrite it".into());
@@ -2626,7 +2641,7 @@ impl Adapter {
         for _ in 0..30 {
             if let Some(block)=recovery::website_block(self,document) { return Err(block.message().into()); }
             check_route()?;
-            if composer_text(&composer) != inserted {
+            if !owned_draft_matches(self.provider, Some(&inserted), &composer_text(&composer)) {
                 return Err("The result draft changed before submission; it was not sent.".into());
             }
             if let Some(button) = self.send_button(document) {

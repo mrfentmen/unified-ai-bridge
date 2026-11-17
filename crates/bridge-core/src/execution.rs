@@ -70,6 +70,16 @@ pub fn kimi_inserted_draft_matches(requested: &str, rendered: &str) -> bool {
         && (rendered == requested || rendered == requested.replace(['\r', '\n'], ""))
 }
 
+/// Only a recorded bridge draft can be reclaimed. ChatGPT restores paragraph
+/// nodes without literal line breaks in textContent. Preserve every other byte,
+/// including spaces and JSON's escaped newlines; never adopt an arbitrary draft.
+pub fn owned_draft_matches(provider: Provider, saved: Option<&str>, rendered: &str) -> bool {
+    let Some(saved) = saved.filter(|s| !s.is_empty()) else { return false; };
+    saved == rendered || (provider == Provider::ChatGpt && !rendered.is_empty()
+        && (saved.replace(['\r', '\n'], "") == rendered
+            || rendered.replace(['\r', '\n'], "") == saved))
+}
+
 pub fn reconnect_delay_ms(attempt: u32) -> u32 {
     1_000u32
         .saturating_mul(1u32 << attempt.saturating_sub(1).min(5))
@@ -92,6 +102,24 @@ impl DeliveryTurn {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restored_chatgpt_draft_accepts_only_recorded_line_break_normalization() {
+        let saved = "[[BRIDGE_RESULT]]\n{\"output\":\"first\\nsecond\"}\n[[/BRIDGE_RESULT]]";
+        let restored = saved.replace('\n', "");
+        let matches = |value: &str| owned_draft_matches(Provider::ChatGpt, Some(saved), value);
+        assert!(matches(saved));
+        assert!(matches(&restored));
+        assert!(owned_draft_matches(Provider::ChatGpt, Some(&restored), saved));
+        assert!(!owned_draft_matches(Provider::Claude, Some(saved), &restored));
+        assert!(!owned_draft_matches(Provider::ChatGpt, None, &restored));
+        assert!(!matches(""));
+        assert!(!matches("user's existing draft"));
+        assert!(!matches(&restored.replace("first", "edited")));
+        assert!(!matches(&restored.replace("\\n", "")));
+        assert!(!matches(&format!("{restored} ")));
+        assert!(!matches(&restored.replace("second", "sec ond")));
+    }
 
     #[test]
     fn kimi_editor_normalization_preserves_payload_and_rejects_draft_changes() {
