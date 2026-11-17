@@ -1377,6 +1377,10 @@ fn start_polling(state: Rc<RefCell<ContentState>>) {
     let observed = state.clone();
     let callback =
         Closure::<dyn FnMut(js_sys::Array, web_sys::MutationObserver)>::new(move |_, _| {
+            // Repair our host in the observer itself: scheduling even a zero-delay
+            // timer can leave a hidden tab without its panel for a full minute.
+            // This only reattaches the existing UI; tool detection stays deferred.
+            ensure_host(&document(), &observed.borrow().ui.host);
             let shared = observed.clone();
             js::schedule(0, move || {
                 detect_tool_request(shared.clone());
