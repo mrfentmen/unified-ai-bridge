@@ -16,7 +16,7 @@ struct Handle {
 }
 thread_local! { static HANDLES: RefCell<Vec<Handle>> = const { RefCell::new(Vec::new()) }; }
 
-fn check_scope(state: &ContentState, scope: &Scope) -> Result<Option<String>, String> {
+pub(super) fn check_scope(state: &ContentState, scope: &Scope) -> Result<Option<String>, String> {
     let doc = document();
     let url = doc.url().map_err(|_| "Cannot read conversation URL.")?;
     if !state.connected
@@ -180,8 +180,9 @@ fn discover(
     let files = HANDLES.with(|cache| {
         let mut cache = cache.borrow_mut();
         cache.retain(|h| {
-            h.scope == *scope
-                && h.panel_user == panel_user
+            // Panel discovery and model discovery have different task scopes.
+            // Refreshing one must not revoke the other's still-valid handles.
+            check_scope(state, &h.scope).is_ok_and(|user| user == h.panel_user)
                 && h.expires > js::now_ms()
                 && h.node.is_connected()
         });
@@ -204,7 +205,8 @@ fn discover(
                 continue;
             }
             if let Some(old) = cache.iter().find(|h| {
-                h.file.source_key == key && h.node.is_same_node(Some(&node)) && h.url == url
+                h.scope == *scope && h.panel_user == panel_user
+                    && h.file.source_key == key && h.node.is_same_node(Some(&node)) && h.url == url
             }) {
                 if !old.used {
                     files.push(old.file.clone());

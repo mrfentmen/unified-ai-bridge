@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 fn internal(e: impl std::fmt::Display) -> ToolFailure {
     ToolFailure::Internal(e.to_string())
 }
-fn scope(ctx: &ToolContext<'_>) -> Result<Scope, ToolFailure> {
+pub(super) fn scope(ctx: &ToolContext<'_>) -> Result<Scope, ToolFailure> {
     if !ctx.app.interactive {
         return Err(ToolFailure::Unsupported(
             "Generated files require a connected browser extension.".into(),

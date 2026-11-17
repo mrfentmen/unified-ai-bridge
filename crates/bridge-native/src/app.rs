@@ -24,6 +24,7 @@ pub struct App {
     pub store: Arc<Store>,
     pub approvals: Arc<ApprovalManager>,
     pub browser_files: Arc<crate::browser_files::Broker>,
+    pub integration_connections: Arc<crate::integrations::ConnectionPool>,
     pub events: broadcast::Sender<BridgeEvent>,
     /// True only when a browser extension can answer approval prompts. MCP and
     /// headless runs fail closed for protected operations.
@@ -82,6 +83,7 @@ impl App {
             store: Arc::new(store),
             approvals: Arc::new(ApprovalManager::default()),
             browser_files: Arc::default(),
+            integration_connections: Arc::default(),
             events,
             interactive,
         }))
@@ -101,6 +103,7 @@ impl App {
             store: self.store.clone(),
             approvals: self.approvals.clone(),
             browser_files: self.browser_files.clone(),
+            integration_connections: self.integration_connections.clone(),
             events: self.events.clone(),
             interactive: self.interactive,
         })
@@ -153,6 +156,7 @@ impl App {
             store: self.store.clone(),
             approvals: self.approvals.clone(),
             browser_files: self.browser_files.clone(),
+            integration_connections: self.integration_connections.clone(),
             events: self.events.clone(),
             interactive: self.interactive,
         }))
@@ -181,6 +185,7 @@ impl App {
             store: self.store.clone(),
             approvals: self.approvals.clone(),
             browser_files: self.browser_files.clone(),
+            integration_connections: self.integration_connections.clone(),
             events: self.events.clone(),
             interactive: self.interactive,
         }))
@@ -390,6 +395,7 @@ impl App {
     }
 
     pub fn end_session(&self, session_id: &str) -> Result<()> {
+        self.integration_connections.disconnect_session(session_id);
         if let Some(session) = self.store.get_session(session_id)? {
             if let Some(agent) = Agent::from_dir(&session.agent) {
                 self.record_activity(

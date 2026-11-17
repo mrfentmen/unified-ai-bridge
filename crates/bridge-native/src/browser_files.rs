@@ -96,7 +96,7 @@ impl Broker {
         match reply {
             Ok(Ok(Ok(value))) => { crate::tasks::checkpoint(app)?; Ok(value) },
             Ok(Ok(Err(error))) => Err(ToolFailure::Conflict(error.chars().take(600).collect())),
-            _ => Err(ToolFailure::Conflict("Browser operation timed out or disconnected. A download may have started; inspect browser downloads before doing anything else. This action is not retried.".into())),
+            _ => Err(ToolFailure::Conflict("Browser operation timed out or disconnected. A file transfer may have started; inspect the chat composer and browser downloads before doing anything else. This action is not retried.".into())),
         }
     }
     pub fn resolve(&self, id: &str, scope: &Scope, result: Result<Value, String>) -> bool {

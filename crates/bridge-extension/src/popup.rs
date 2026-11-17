@@ -132,6 +132,35 @@ fn bridge_ui(wide: bool) -> impl IntoView {
                 }>{move || if status.get().bridge == "connected" { "connected".to_string() } else { format!("reconnecting ({})",status.get().reconnect_attempt) }}</span>
             </div>
 
+            <Show when=move || !status.get().approvals.is_empty()>
+                <div style="margin-bottom:10px;position:sticky;top:0;background:#0f171e;z-index:2">
+                    <SectionTitle text="Approval required"/>
+                    {move || status.get().approvals.into_iter().map(|approval| {
+                        let id = approval.id.clone();
+                        let id_deny = approval.id.clone();
+                        let path = approval.path.clone().unwrap_or_default();
+                        view! {
+                            <div style="background:#241f14;border:1px solid #66532a;border-radius:6px;padding:7px 8px;margin-bottom:5px">
+                                <div style="color:#f0d79c;font-weight:600;font-size:11px">{format!("{} · {}", approval.agent, approval.tool)}</div>
+                                <div style="color:#cbb98e;font-size:10px;white-space:pre-wrap;overflow:auto;max-height:240px">{approval.reason.clone()}</div>
+                                <div>{format!("Expires in {} seconds",((js_sys::Date::parse(&approval.expires_at)-js::now_ms())/1000.0).ceil().max(0.0) as i64)}</div>
+                                <div style="color:#9d8c67;font-family:ui-monospace,Menlo,monospace;font-size:9px;word-break:break-all;margin-top:2px">{path}</div>
+                                <div style="display:flex;gap:5px;margin-top:6px">
+                                    <button
+                                        on:click=move |_| { decide(id.clone(), true, status, error); }
+                                        style="background:#3a4d2c;color:#e6f0dc;border:1px solid #607f47;border-radius:4px;padding:4px 8px;font-size:10px;font-family:inherit;cursor:pointer"
+                                    >"Approve once"</button>
+                                    <button
+                                        on:click=move |_| { decide(id_deny.clone(), false, status, error); }
+                                        style="background:#3a2626;color:#f0dcdc;border:1px solid #714444;border-radius:4px;padding:4px 8px;font-size:10px;font-family:inherit;cursor:pointer"
+                                    >"Deny"</button>
+                                </div>
+                            </div>
+                        }
+                    }).collect_view()}
+                </div>
+            </Show>
+
             <div style=if wide {"display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start"}else{"display:block"}><div>
             <div style="background:#16222c;border:1px solid #293b47;border-radius:7px;padding:8px 10px;margin-bottom:10px">
                 <div style="color:#8ea2b1;font-size:10px;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px">"Approved workspace"</div>
@@ -144,16 +173,10 @@ fn bridge_ui(wide: bool) -> impl IntoView {
             </div>
 
             <WorkspaceControls status=status error=error/>
-            <ReadinessControls status=status error=error/>
-            <YoloControls status=status error=error/>
-            <WriteGrantControls status=status error=error/>
-            <CommandControls status=status error=error/>
-            <ArtifactControls status=status error=error/>
-            <ToolWorkbench status=status error=error/>
-            <IntegrationControls status=status error=error/>
-            <NetworkControls status=status error=error/>
-
-            <SectionTitle text="Providers"/>
+            <SectionTitle text="Connected chats"/>
+            <Show when=move||status.get().sessions.is_empty()>
+                <div style="margin-bottom:10px;color:#a6b8c5">"Open an AI website, sign in, then press Connect in its bridge panel. Choose the folder you want it to work in using Workspace controls."</div>
+            </Show>
             <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-bottom:11px">
                 {Provider::ALL.into_iter().map(|provider| {
                     let session = move || status.get().sessions.into_iter().find(|session| session.provider == provider.slug());
@@ -187,6 +210,30 @@ fn bridge_ui(wide: bool) -> impl IntoView {
                 }).collect_view()}
             </div>
 
+            <button style=CONTROL_STYLE disabled=move||busy.get()||status.get().sessions.is_empty() on:click=move |_| {
+                let sessions=status.get_untracked().sessions;busy.set(true);
+                spawn_local(async move {
+                    for session in sessions {
+                        if let Err(err)=workspace_request(json!({"op":"provider_control","session_id":session.id,"action":"disconnect"})).await{error.set(Some(err));}
+                    }
+                    busy.set(false);refresh(status,error);
+                });
+            }>"Stop chat calls / disconnect chats"</button>
+            <div style="color:#8ea2b1;font-size:10px;margin:4px 0 10px">"Started work may finish. Stop background commands in Command jobs."</div>
+            <ArtifactControls status=status error=error/>
+            <UploadControls status=status error=error/>
+            <IntegrationControls status=status error=error/>
+            <details style="margin:10px 0"><summary>"Advanced tools, permissions and diagnostics"</summary>
+                <ReadinessControls status=status error=error/>
+                <YoloControls status=status error=error/>
+                <WriteGrantControls status=status error=error/>
+                <CommandControls status=status error=error/>
+                <ToolWorkbench status=status error=error/>
+                <NetworkControls status=status error=error/>
+                <TaskBudgetControls status=status error=error/>
+                <RecoveryControls status=status error=error/>
+            </details>
+
             <div style="display:flex;gap:6px;margin-bottom:9px">
                 <button
                     on:click=toggle_auto
@@ -206,40 +253,10 @@ fn bridge_ui(wide: bool) -> impl IntoView {
             </div>
 
             </div><div>
-            <Show when=move || !status.get().approvals.is_empty()>
-                <div style="margin-bottom:10px;position:sticky;top:0;background:#0f171e;z-index:2">
-                    <SectionTitle text="Approval required"/>
-                    {move || status.get().approvals.into_iter().map(|approval| {
-                        let id = approval.id.clone();
-                        let id_deny = approval.id.clone();
-                        let path = approval.path.clone().unwrap_or_default();
-                        view! {
-                            <div style="background:#241f14;border:1px solid #66532a;border-radius:6px;padding:7px 8px;margin-bottom:5px">
-                                <div style="color:#f0d79c;font-weight:600;font-size:11px">{format!("{} · {}", approval.agent, approval.tool)}</div>
-                                <div style="color:#cbb98e;font-size:10px;white-space:pre-wrap;overflow:auto;max-height:240px">{approval.reason.clone()}</div>
-                                <div>{format!("Expires in {} seconds",((js_sys::Date::parse(&approval.expires_at)-js::now_ms())/1000.0).ceil().max(0.0) as i64)}</div>
-                                <div style="color:#9d8c67;font-family:ui-monospace,Menlo,monospace;font-size:9px;word-break:break-all;margin-top:2px">{path}</div>
-                                <div style="display:flex;gap:5px;margin-top:6px">
-                                    <button
-                                        on:click=move |_| { decide(id.clone(), true, status, error); }
-                                        style="background:#3a4d2c;color:#e6f0dc;border:1px solid #607f47;border-radius:4px;padding:4px 8px;font-size:10px;font-family:inherit;cursor:pointer"
-                                    >"Approve once"</button>
-                                    <button
-                                        on:click=move |_| { decide(id_deny.clone(), false, status, error); }
-                                        style="background:#3a2626;color:#f0dcdc;border:1px solid #714444;border-radius:4px;padding:4px 8px;font-size:10px;font-family:inherit;cursor:pointer"
-                                    >"Deny"</button>
-                                </div>
-                            </div>
-                        }
-                    }).collect_view()}
-                </div>
-            </Show>
 
             <SectionTitle text="Recent local activity"/>
             <JobControls status=status error=error/>
             <TaskControls status=status error=error/>
-            <TaskBudgetControls status=status error=error/>
-            <RecoveryControls status=status error=error/>
             <ActivityFeed status=status error=error/>
 
             <Show when=move || error.get().is_some() || status.get().last_error.is_some()>
@@ -264,7 +281,7 @@ fn bridge_ui(wide: bool) -> impl IntoView {
                 <div>{move || format!("Build {} · host {} · protocol {}", status.get().extension_build, status.get().host_version, status.get().protocol)}</div>
                 <button style=CONTROL_STYLE on:click=move |_|{let _=js::create_tab(&js::to_js(&json!({"url":"chrome://extensions/"})));}>"Reload extension instructions"</button>
                 <div>"After a build, open Extensions, click Reload for Unified AI Bridge, then refresh provider tabs. Verify the panel build number. Side panel shortcuts: r refresh, a approve first, d deny first."</div>
-                "Each tab is bound to a host-issued session. Models never supply their own identity. Datasets are immutable; writes use checkpoints and the audit chain."
+                "Each tab uses a host-issued session. Writes and approvals are audited; original research datasets remain protected."
             </div>
         </div>
     }
@@ -335,6 +352,51 @@ fn NetworkControls(status: RwSignal<StatusView>,error: RwSignal<Option<String>>)
 }
 
 #[component]
+fn UploadControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -> impl IntoView {
+    let session=RwSignal::new(String::new());let path=RwSignal::new(String::new());
+    let hash=RwSignal::new(String::new());let notice=RwSignal::new(String::new());let busy=RwSignal::new(false);
+    let scope=RwSignal::new(String::new());
+    Effect::new(move |_|{let next=format!("{}:{}:{}",status.get().active_id,session.get(),path.get());if scope.get_untracked()!=next{scope.set(next);hash.set(String::new());notice.set(String::new());}});
+    let run=move|tool:&'static str|{
+        let workspace=status.get_untracked().active_id;let sid=session.get_untracked();let selected_path=path.get_untracked();
+        if !status.get_untracked().sessions.iter().any(|s|s.id==sid && s.provider=="chatgpt"){error.set(Some("Choose the destination ChatGPT conversation first.".into()));return;}
+        let args=if tool=="attach_file_to_chat"{json!({"path":selected_path,"expected_sha256":hash.get_untracked()})}else{json!({"path":selected_path})};
+        busy.set(true);
+        spawn_local(async move{
+            let result=workspace_request(json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":tool,"arguments":args})).await;
+            if status.get_untracked().active_id==workspace && session.get_untracked()==sid && path.get_untracked()==selected_path {
+                match result {
+                    Ok(value) if value["status"]=="ok"=>{
+                        error.set(None);
+                        if tool=="calculate_sha256"{hash.set(value["data"]["sha256"].as_str().unwrap_or_default().into());notice.set("Hash captured. Review the disclosure approval when requesting upload.".into());}
+                        else{notice.set("Real file uploaded. Inspect the attachment in that ChatGPT conversation, write your prompt and press Send. It is not sent automatically from panel controls.".into());hash.set(String::new());}
+                    }
+                    Ok(value)=>error.set(Some(value["error"].as_str().unwrap_or("Upload failed; inspect the chat before trying anything else.").into())),
+                    Err(e)=>error.set(Some(e)),
+                }
+            }
+            busy.set(false);refresh(status,error);
+        });
+    };
+    view!{
+        <details style="border:1px solid #304451;padding:8px;margin-bottom:10px"><summary>"Local file → chat"</summary>
+            <div style="display:grid;gap:6px;margin-top:8px">
+                <div>"ChatGPT · text/source or PNG/JPEG/WebP · up to 512 KiB. Upload discloses the full file and always asks for approval. Other providers need manual attachment."</div>
+                <select aria-label="Upload destination conversation" style=CONTROL_STYLE prop:value=move||session.get() on:change=move|ev|session.set(event_target_value(&ev))>
+                    <option value="">"Choose ChatGPT conversation…"</option>
+                    {move||status.get().sessions.into_iter().filter(|s|s.provider=="chatgpt").map(|s|view!{<option value=s.id>{format!("tab {} · {}",s.tab_id,s.conversation.unwrap_or_default())}</option>}).collect_view()}
+                </select>
+                <input aria-label="Upload local file path" style=CONTROL_STYLE placeholder="files/example.png" prop:value=move||path.get() on:input=move|ev|path.set(event_target_value(&ev))/>
+                <button style=CONTROL_STYLE disabled=move||busy.get()||session.get().is_empty()||path.get().is_empty() on:click=move |_|run("calculate_sha256")>"Inspect exact file hash"</button>
+                <div style="font-family:monospace;word-break:break-all">{move||hash.get()}</div>
+                <button style=CONTROL_STYLE disabled=move||busy.get()||hash.get().is_empty() on:click=move |_|run("attach_file_to_chat")>"Request upload approval"</button>
+                <div>{move||notice.get()}</div>
+            </div>
+        </details>
+    }
+}
+
+#[component]
 fn IntegrationControls(
     status: RwSignal<StatusView>,
     error: RwSignal<Option<String>>,
@@ -376,10 +438,11 @@ fn IntegrationControls(
                     spawn_local(async move{match workspace_request(json!({"op":"integration_save","server":server})).await{Ok(_)=>{notice.set("Registered with no tools enabled. Discover and review tools next.".into());reload();},Err(err)=>error.set(Some(err))};busy.set(false);});
                 }>"Register server (no tools enabled)"</button>
                 {move||servers.get().into_iter().map(|server|{
-                    let server_id=server["id"].as_str().unwrap_or_default().to_string();let remove_id=server_id.clone();let health_id=server_id.clone();
+                    let server_id=server["id"].as_str().unwrap_or_default().to_string();let remove_id=server_id.clone();let health_id=server_id.clone();let disconnect_id=server_id.clone();
                     view!{<div style="border-top:1px solid #304451;padding-top:6px">
                         <div>{format!("{} · {} · {} tools enabled",server_id,server["program"],server["tools"].as_array().map_or(0,Vec::len))}</div>
-                        <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{let id=health_id.clone();busy.set(true);spawn_local(async move{match workspace_request(json!({"op":"integration_status","server_id":id})).await{Ok(value)=>notice.set(value.to_string()),Err(err)=>error.set(Some(err))};busy.set(false);});}>"Check grant and executable"</button>
+                        <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{let id=health_id.clone();busy.set(true);spawn_local(async move{match workspace_request(json!({"op":"integration_status","server_id":id})).await{Ok(value)=>notice.set(value.to_string()),Err(err)=>error.set(Some(err))};busy.set(false);});}>"Check connection and grant"</button>
+                        <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{let id=disconnect_id.clone();let workspace=status.get_untracked().active_id;busy.set(true);spawn_local(async move{match workspace_request(json!({"op":"integration_disconnect","workspace_id":workspace,"server_id":id})).await{Ok(value)=>notice.set(value["note"].as_str().unwrap_or_default().into()),Err(err)=>error.set(Some(err))};busy.set(false);});}>"Disconnect (keep grants)"</button>
                         <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|{let id=server_id.clone();busy.set(true);spawn_local(async move{match workspace_request(json!({"op":"integration_discover","server_id":id})).await{Ok(value)=>{discovery.set(value);notice.set("Discovery succeeded. Select tools to grant; nothing is enabled automatically.".into());},Err(err)=>error.set(Some(err))};busy.set(false);});}>"Start and discover tools"</button>
                         <button style=CONTROL_STYLE on:click=move |_|{let id=remove_id.clone();spawn_local(async move{match workspace_request(json!({"op":"integration_remove","server_id":id})).await{Ok(_)=>{reload();discovery.set(serde_json::Value::Null);notice.set("Grant removed. Active calls stop at the next check; completed external effects are not undone.".into());},Err(err)=>error.set(Some(err))}});}>"Remove grant / stop integration"</button>
                     </div>}

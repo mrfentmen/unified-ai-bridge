@@ -248,6 +248,7 @@ impl Store {
             CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, definition TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS bridge_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS browser_downloads (owner TEXT NOT NULL, source_key TEXT NOT NULL, result_json TEXT, PRIMARY KEY(owner,source_key));
+            CREATE TABLE IF NOT EXISTS browser_uploads (owner TEXT NOT NULL, source_key TEXT NOT NULL, result_json TEXT, PRIMARY KEY(owner,source_key));
             CREATE TABLE IF NOT EXISTS activity_results (activity_id INTEGER PRIMARY KEY REFERENCES activity(id), duration_ms INTEGER NOT NULL, result_json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS file_changes (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, session_id TEXT NOT NULL, download_id INTEGER NOT NULL, record TEXT NOT NULL, UNIQUE(workspace_id, session_id, download_id));
@@ -1250,6 +1251,20 @@ impl Store {
     pub fn finish_browser_download(&self, owner: &str, source_key: &str, result: &serde_json::Value) -> Result<()> {
         self.conn.lock().expect("store mutex").execute(
             "UPDATE browser_downloads SET result_json=?3 WHERE owner=?1 AND source_key=?2",
+            params![owner,source_key,result.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn claim_browser_upload(&self, owner: &str, source_key: &str) -> Result<bool> {
+        Ok(self.conn.lock().expect("store mutex").execute(
+            "INSERT OR IGNORE INTO browser_uploads(owner,source_key) VALUES (?1,?2)",
+            params![owner,source_key],
+        )? == 1)
+    }
+    pub fn finish_browser_upload(&self, owner: &str, source_key: &str, result: &serde_json::Value) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute(
+            "UPDATE browser_uploads SET result_json=?3 WHERE owner=?1 AND source_key=?2",
             params![owner,source_key,result.to_string()],
         )?;
         Ok(())

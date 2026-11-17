@@ -25,7 +25,7 @@ The host reads the selected file, checks its size and hash, requests approval, t
 
 Imports are recorded in SQLite and the append-only audit chain. An already imported ID cannot create a second copy. An `importing` receipt left by an interruption means the outcome needs inspection; it will not be retried automatically. Check the recorded destination and hash before downloading and sharing a new copy. Expired or revoked grants require a new download. There is a limit of 100 shares per session.
 
-Files are streamed locally; binary payloads are not pasted into chat or carried in giant Native Messaging messages. Existing text edit and recovery limits remain 1 MiB. Imports do not provide large-binary undo, unpack archives, run programs, render untrusted content, or upload files back into chats.
+Files are streamed locally; binary payloads are not pasted into chat or carried in giant Native Messaging messages. Existing text edit and recovery limits remain 1 MiB. Imports do not provide large-binary undo, unpack archives, run programs, render untrusted content, or upload files back into chats. Outbound transfer uses the separate [approved upload workflow](UPLOADS.md).
 
 ## Discovery limits
 
@@ -35,6 +35,6 @@ Discovery recognizes ChatGPT's rendered file cards and explicit `a[download][hre
 
 Direct links are restricted to HTTPS provider origins, ChatGPT's file origin, or their blob URLs. Source URLs stay inside the extension; only selected-file metadata goes to the host. Direct downloads are observed for at most 40 seconds; an interrupted, oversized, unsafe or still-pending file is not shared. Chrome can still leave a partial/completed file in Downloads. The 64 MiB limit is enforced again by the native importer; the bridge does not promise a byte-exact network transfer cutoff.
 
-Support for a file's bytes is separate from inspecting/editing its format. Provider file-generation capabilities, quotas, foreground rendering requirements and normal macOS permissions still apply. Uploading local files/images back to a chat remains separate work.
+Support for a file's bytes is separate from inspecting/editing its format. Provider file-generation capabilities, quotas, foreground rendering requirements and normal macOS permissions still apply. The [outbound upload adapter](UPLOADS.md) currently targets ChatGPT text/source and PNG/JPEG/WebP files up to 512 KiB; other providers require manual attachment.
 
 Chrome's Downloads permission is required. After upgrading, reload the extension and check that the card, panel, and native host show the same build. macOS may separately request permission for the host to read Downloads or write to the workspace.

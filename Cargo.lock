@@ -251,7 +251,7 @@ checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 
 [[package]]
 name = "bridge-core"
-version = "0.5.26"
+version = "0.5.30"
 dependencies = [
  "hex",
  "serde",
@@ -262,16 +262,19 @@ dependencies = [
 
 [[package]]
 name = "bridge-extension"
-version = "0.5.26"
+version = "0.5.30"
 dependencies = [
+ "base64 0.22.1",
  "bridge-core",
  "console_error_panic_hook",
+ "hex",
  "js-sys",
  "leptos",
  "oxichrome",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "sha2 0.10.9",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -280,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-native"
-version = "0.5.26"
+version = "0.5.30"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -328,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-tooling"
-version = "0.5.26"
+version = "0.5.30"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

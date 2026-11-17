@@ -8,6 +8,7 @@ use std::{path::PathBuf, sync::Arc};
 struct Probe {
     root: PathBuf,
     mode: String,
+    calls: std::sync::atomic::AtomicUsize,
 }
 impl ServerHandler for Probe {
     async fn list_tools(
@@ -35,6 +36,16 @@ impl ServerHandler for Probe {
         _: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         std::fs::write(self.root.join("called"), "started").unwrap();
+        if self.mode == "counter" {
+            let n = self
+                .calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
+                serde_json::json!({"pid":std::process::id(),"calls":n}).to_string(),
+            )])
+            .into());
+        }
         // Inherits the server's process group, as ordinary child processes do.
         let child = std::process::Command::new("/bin/sleep")
             .arg("30")
@@ -62,10 +73,14 @@ async fn main() -> anyhow::Result<()> {
         std::fs::write(root.join("initializing"), "started")?;
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
     }
-    Probe { root, mode }
-        .serve(rmcp::transport::stdio())
-        .await?
-        .waiting()
-        .await?;
+    Probe {
+        root,
+        mode,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    }
+    .serve(rmcp::transport::stdio())
+    .await?
+    .waiting()
+    .await?;
     Ok(())
 }

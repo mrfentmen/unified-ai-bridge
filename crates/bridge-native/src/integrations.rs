@@ -160,6 +160,248 @@ impl McpClient {
             .await;
     }
 }
+/// Live transports are private to one workspace/session/server. A lease owns
+/// the process while a call is running: dropping a cancelled future kills it.
+#[derive(Default)]
+pub struct ConnectionPool {
+    entries: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<ConnectionEntry>>>,
+}
+struct ConnectionEntry {
+    slot: std::sync::Arc<tokio::sync::Mutex<Option<(McpClient, tokio::time::Instant)>>>,
+    online: std::sync::atomic::AtomicBool,
+    workspace: String,
+    session: String,
+    cancelled: std::sync::atomic::AtomicBool,
+    cancellation: tokio::sync::Notify,
+    watch_generation: std::sync::atomic::AtomicU64,
+    config: ServerConfig,
+}
+impl ConnectionEntry {
+    fn cancel(&self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.online
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.cancellation.notify_waiters();
+        if let Ok(mut slot) = self.slot.try_lock() {
+            slot.take();
+        }
+    }
+    fn check(&self) -> Result<(), ToolFailure> {
+        if self.cancelled.load(std::sync::atomic::Ordering::SeqCst) {
+            Err(failure(
+                "Application connection disconnected. No retry was attempted.",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+    async fn cancelled(&self) -> ToolFailure {
+        loop {
+            let notified = self.cancellation.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if let Err(error) = self.check() {
+                return error;
+            }
+            notified.await;
+        }
+    }
+}
+impl ConnectionPool {
+    fn entry(
+        &self,
+        app: &App,
+        session: &str,
+        config: &ServerConfig,
+    ) -> Result<std::sync::Arc<ConnectionEntry>, ToolFailure> {
+        let key =
+            bridge_core::browser_files::source_key(&[&app.workspace.id(), session, &config.id]);
+        let mut entries = self.entries.lock().expect("MCP pool");
+        if let Some(entry) = entries.get(&key) {
+            if serde_json::to_string(&entry.config).ok() == serde_json::to_string(config).ok() {
+                return Ok(entry.clone());
+            }
+            entry.cancel();
+            entries.remove(&key);
+        }
+        entries.retain(|_, e| {
+            e.online.load(std::sync::atomic::Ordering::Relaxed)
+                || std::sync::Arc::strong_count(e) > 1
+        });
+        if entries.len() >= 32 {
+            return Err(failure(
+                "Too many live application connections; disconnect an unused session.",
+            ));
+        }
+        let entry = std::sync::Arc::new(ConnectionEntry {
+            slot: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+            online: std::sync::atomic::AtomicBool::new(false),
+            workspace: app.workspace.id(),
+            session: session.into(),
+            cancelled: std::sync::atomic::AtomicBool::new(false),
+            cancellation: tokio::sync::Notify::new(),
+            watch_generation: std::sync::atomic::AtomicU64::new(0),
+            config: config.clone(),
+        });
+        entries.insert(key, entry.clone());
+        Ok(entry)
+    }
+    pub fn disconnect(&self, workspace: &str, server: Option<&str>) {
+        self.entries.lock().expect("MCP pool").retain(|_, e| {
+            let remove = e.workspace == workspace && server.is_none_or(|id| e.config.id == id);
+            if remove {
+                e.cancel();
+            }
+            !remove
+        });
+    }
+    pub fn disconnect_session(&self, session: &str) {
+        self.entries.lock().expect("MCP pool").retain(|_, e| {
+            if e.session == session {
+                e.cancel();
+                false
+            } else {
+                true
+            }
+        });
+    }
+    fn connected(&self, workspace: &str, server: &str) -> usize {
+        self.entries
+            .lock()
+            .expect("MCP pool")
+            .values()
+            .filter(|e| {
+                e.workspace == workspace
+                    && e.config.id == server
+                    && e.online.load(std::sync::atomic::Ordering::Relaxed)
+            })
+            .count()
+    }
+}
+struct ConnectionLease {
+    client: Option<McpClient>,
+    entry: std::sync::Arc<ConnectionEntry>,
+    slot: tokio::sync::OwnedMutexGuard<Option<(McpClient, tokio::time::Instant)>>,
+}
+impl Drop for ConnectionLease {
+    fn drop(&mut self) {
+        if self.client.is_some() {
+            self.entry
+                .online
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+impl ConnectionLease {
+    async fn acquire(
+        app: &App,
+        entry: std::sync::Arc<ConnectionEntry>,
+    ) -> Result<Self, ToolFailure> {
+        let config = &entry.config;
+        entry.check()?;
+        config
+            .validate()
+            .map_err(|e| ToolFailure::PermissionDenied(e.to_string()))?;
+        current_grant(app, config)?;
+        let mut slot =
+            entry.slot.clone().try_lock_owned().map_err(|_| {
+                failure("This conversation already has an active call on that server.")
+            })?;
+        let client = if let Some((client, last_used)) = slot.take() {
+            if client.service.is_closed() || last_used.elapsed() > Duration::from_secs(300) {
+                entry
+                    .online
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                drop(client);
+                return Err(failure("Application connection closed or expired. No tool was sent. A new explicit call can reconnect."));
+            }
+            client
+        } else {
+            tokio::select! {
+                biased;
+                error=entry.cancelled()=>return Err(error),
+                error=crate::tasks::wait_until_halted(app)=>return Err(error),
+                client=connect(app,config)=>client?,
+            }
+        };
+        entry.check()?;
+        entry
+            .online
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        Ok(Self {
+            client: Some(client),
+            entry,
+            slot,
+        })
+    }
+    fn service(&self) -> &RunningService<RoleClient, ()> {
+        &self.client.as_ref().expect("MCP lease").service
+    }
+    fn release(mut self, app: &App) {
+        if self.entry.check().is_err() {
+            return;
+        }
+        *self.slot = Some((
+            self.client.take().expect("MCP lease"),
+            tokio::time::Instant::now(),
+        ));
+        // Idle transports are polled independently of website focus. The watcher
+        // owns only a weak entry, so it cannot keep an abandoned pool alive.
+        let generation = self
+            .entry
+            .watch_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        let weak = std::sync::Arc::downgrade(&self.entry);
+        let home = app.home.clone();
+        let store = app.store.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                let Some(entry) = weak.upgrade() else { break };
+                if entry
+                    .watch_generation
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    != generation
+                {
+                    break;
+                }
+                let Ok(mut slot) = entry.slot.try_lock() else {
+                    break;
+                };
+                let Some((client, last_used)) = slot.as_ref() else {
+                    break;
+                };
+                let current = home.load_config().ok().and_then(|c| {
+                    c.workspace_integrations
+                        .get(&entry.workspace)
+                        .and_then(|s| s.iter().find(|s| s.id == entry.config.id))
+                        .cloned()
+                });
+                let permitted = current.as_ref().and_then(|c| serde_json::to_string(c).ok())
+                    == serde_json::to_string(&entry.config).ok()
+                    && store
+                        .workspaces()
+                        .is_ok_and(|w| w.iter().any(|w| w.id == entry.workspace && !w.read_only))
+                    && store
+                        .active_workspace_id()
+                        .is_ok_and(|id| id.as_deref() == Some(&entry.workspace));
+                if !permitted
+                    || client.service.is_closed()
+                    || last_used.elapsed() > Duration::from_secs(300)
+                    || !entry.online.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    slot.take();
+                    entry
+                        .online
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+            }
+        });
+    }
+}
 fn current_grant(app: &App, config: &ServerConfig) -> Result<(), ToolFailure> {
     let current = app.home.load_config().map_err(failure)?;
     let current = current
@@ -252,7 +494,7 @@ pub fn health(app: &App, id: &str) -> Result<Value, ToolFailure> {
             .map_err(|e| ToolFailure::PermissionDenied(e.to_string()))
     });
     Ok(
-        json!({"server_id":id,"state":if result.is_ok(){"configured_unprobed"}else{"blocked"},"reason":result.err().map(|e|e.to_string()),"granted_tools":config.tools.len(),"timeout_secs":config.timeout_secs,"process_started":false,"connected":null,"note":"This checks the current grant and executable hash, not server responsiveness. Each discovery/call starts a separate process; discovery never grants tools. In-flight revocation/lock checks run every 250 ms and cannot undo completed external effects."}),
+        json!({"server_id":id,"state":if result.is_err(){"blocked"}else if app.integration_connections.connected(&app.workspace.id(),id)>0{"connected"}else{"configured_unprobed"},"reason":result.err().map(|e|e.to_string()),"granted_tools":config.tools.len(),"timeout_secs":config.timeout_secs,"process_started":false,"connected_sessions":app.integration_connections.connected(&app.workspace.id(),id),"note":"This checks the current grant and executable hash, not server responsiveness. Discovery starts a temporary process. Approved calls reuse a conversation-owned connection for up to five idle minutes; discovery never grants tools. In-flight revocation/lock checks run every 250 ms and cannot undo completed external effects."}),
     )
 }
 #[derive(Deserialize)]
@@ -345,6 +587,20 @@ pub fn validate_catalog(servers: &[ServerConfig]) -> Result<()> {
 pub fn configured_list(app: &App) -> Value {
     json!({"servers":app.config.workspace_integrations.get(&app.workspace.id()).cloned().unwrap_or_default()})
 }
+pub fn disconnect(app: &App, workspace: &str, id: &str) -> Result<Value> {
+    if workspace != app.workspace.id() {
+        bail!("workspace changed; refresh application controls");
+    }
+    configured(app, id)?;
+    app.audit_workspace(
+        "integration.disconnect",
+        json!({"workspace":workspace,"server":id}),
+    )?;
+    app.integration_connections.disconnect(workspace, Some(id));
+    Ok(
+        json!({"disconnected":id,"note":"Connections stopped. Grants are preserved; a new explicit approved call can reconnect. Completed external effects are not undone."}),
+    )
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Call {
@@ -371,10 +627,25 @@ pub async fn call(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, Too
         ));
     }
     // All external calls ask; upstream readOnly annotations do not confer authority.
-    ctx.app.request_approval(ctx.session_id,ctx.agent,"call_integration_tool",&format!("Run external MCP tool {}/{} with {}. This native program has your OS account permissions and is not confined to the workspace.",args.server_id,args.tool,args.arguments),None).await?;
+    let entry = ctx
+        .app
+        .integration_connections
+        .entry(ctx.app, ctx.session_id, config)?;
+    let reason = format!("Run external MCP tool {}/{} with {}. This native program has your OS account permissions and is not confined to the workspace.", args.server_id, args.tool, args.arguments);
+    tokio::select! {
+        biased;
+        error=entry.cancelled()=>return Err(error),
+        result=ctx.app.request_approval(ctx.session_id,ctx.agent,"call_integration_tool",&reason,None)=>result?,
+    }
     current_grant(ctx.app, config)?;
-    let client = connect(ctx.app, config).await?;
-    let definitions = tokio::select! {result=definitions(&client.service)=>result?,error=revoked(ctx.app,config)=>return Err(error)};
+    let client = ConnectionLease::acquire(ctx.app, entry.clone()).await?;
+    let definitions = tokio::select! {
+        biased;
+        error=entry.cancelled()=>return Err(error),
+        error=crate::tasks::wait_until_halted(ctx.app)=>return Err(error),
+        error=revoked(ctx.app,config)=>return Err(error),
+        result=definitions(client.service())=>result?,
+    };
     let definition = definitions
         .iter()
         .find(|t| t.name.as_ref() == args.tool)
@@ -392,16 +663,21 @@ pub async fn call(ctx: &ToolContext<'_>, args: Value) -> Result<ToolOutcome, Too
         .map_err(|e| ToolFailure::InvalidArguments(e.to_string()))?;
     current_grant(ctx.app, config)?;
     let request = CallToolRequestParams::new(args.tool.clone()).with_arguments(arguments);
+    entry.check()?;
     let result = tokio::select! {
-        result=tokio::time::timeout(Duration::from_secs(config.timeout_secs),client.service.call_tool(request))=>result.map_err(|_|failure("MCP call timed out; outcome may be uncertain. It was not retried.")).and_then(|r|r.map_err(failure)),
-        error=revoked(ctx.app,config)=>Err(ToolFailure::PermissionDenied(format!("{error}; external process stopped. The operation may already have changed files; outcome is uncertain and was not retried.")))
+        biased;
+        error=entry.cancelled()=>Err(failure(format!("{error} External process stopped; outcome is uncertain and was not retried."))),
+        error=crate::tasks::wait_until_halted(ctx.app)=>Err(failure(format!("{error}; external process stopped; outcome is uncertain and was not retried."))),
+        error=revoked(ctx.app,config)=>Err(ToolFailure::PermissionDenied(format!("{error}; external process stopped. The operation may already have changed files; outcome is uncertain and was not retried."))),
+        result=tokio::time::timeout(Duration::from_secs(config.timeout_secs),client.service().call_tool(request))=>result.map_err(|_|failure("MCP call timed out; outcome may be uncertain. It was not retried.")).and_then(|r|r.map_err(failure)),
     };
-    client.stop().await;
     let result = result?;
+    current_grant(ctx.app, config)?;
     let serialized = serde_json::to_string(&result).map_err(failure)?;
     if serialized.len() > 50_000 {
         return Err(ToolFailure::Unsupported("MCP result exceeds 50 KB; operation may have completed. Narrow its output before making a new request.".into()));
     }
+    client.release(ctx.app);
     let mut outcome = ToolOutcome::write(
         format!("MCP {}/{}", args.server_id, args.tool),
         "External result is in data.mcp_result.",
@@ -449,6 +725,8 @@ pub fn save(app: &std::sync::Arc<App>, mut server: ServerConfig) -> Result<std::
         json!({"workspace":app.workspace.id(),"server":server}),
     )?;
     app.home.save_config(&config)?;
+    app.integration_connections
+        .disconnect(&app.workspace.id(), None);
     Ok(std::sync::Arc::new(App {
         home: app.home.clone(),
         config,
@@ -456,6 +734,7 @@ pub fn save(app: &std::sync::Arc<App>, mut server: ServerConfig) -> Result<std::
         store: app.store.clone(),
         approvals: app.approvals.clone(),
         browser_files: app.browser_files.clone(),
+        integration_connections: app.integration_connections.clone(),
         events: app.events.clone(),
         interactive: app.interactive,
     }))
@@ -472,6 +751,8 @@ pub fn remove(app: &std::sync::Arc<App>, id: &str) -> Result<std::sync::Arc<App>
         json!({"workspace":app.workspace.id(),"server":id}),
     )?;
     app.home.save_config(&config)?;
+    app.integration_connections
+        .disconnect(&app.workspace.id(), None);
     Ok(std::sync::Arc::new(App {
         home: app.home.clone(),
         config,
@@ -479,6 +760,7 @@ pub fn remove(app: &std::sync::Arc<App>, id: &str) -> Result<std::sync::Arc<App>
         store: app.store.clone(),
         approvals: app.approvals.clone(),
         browser_files: app.browser_files.clone(),
+        integration_connections: app.integration_connections.clone(),
         events: app.events.clone(),
         interactive: app.interactive,
     }))

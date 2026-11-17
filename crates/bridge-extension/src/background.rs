@@ -220,6 +220,7 @@ enum BgRequest {
     },
     IntegrationList,
     IntegrationStatus {server_id:String},
+    IntegrationDisconnect { workspace_id: String, server_id: String },
     IntegrationSave {
         server: Value,
     },
@@ -736,6 +737,7 @@ fn handle_message(
         | BgRequest::RevokeArtifact { .. }
         | BgRequest::IntegrationList
         | BgRequest::IntegrationStatus { .. }
+        | BgRequest::IntegrationDisconnect { .. }
         | BgRequest::IntegrationSave { .. }
         | BgRequest::IntegrationRemove { .. }
         | BgRequest::IntegrationDiscover { .. }) => {
@@ -820,6 +822,7 @@ fn handle_message(
                 BgRequest::CommandPresets => json!({"type":"command_presets"}),
                 BgRequest::IntegrationList => json!({"type":"integration_list"}),
                 BgRequest::IntegrationStatus{server_id}=>json!({"type":"integration_status","server_id":server_id}),
+                BgRequest::IntegrationDisconnect{workspace_id,server_id}=>json!({"type":"integration_disconnect","workspace_id":workspace_id,"server_id":server_id}),
                 BgRequest::IntegrationSave { server } => {
                     json!({"type":"integration_save","server":server})
                 }
@@ -1445,6 +1448,10 @@ fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
                 "[Unified AI Bridge] unhandled native message type: {kind}"
             )));
         }
+    }
+    let event_kind=if kind=="event" {value["event"]["type"].as_str().unwrap_or_default()}else{kind};
+    if matches!(event_kind,"approval_required"|"approval_resolved") {
+        wake_provider_status();
     }
 }
 

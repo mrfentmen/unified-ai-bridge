@@ -291,7 +291,7 @@ async fn removal_during_initialization_and_discovery_stops_the_process_before_an
 #[tokio::test]
 async fn active_call_removal_lock_and_timeout_stop_inherited_process_groups_and_report_uncertainty()
 {
-    for action in ["remove", "lock", "timeout"] {
+    for action in ["remove", "lock", "timeout", "disconnect", "session_close"] {
         let temp = tempfile::tempdir().unwrap();
         let app = fixture(&temp);
         let markers = temp.path().join("markers");
@@ -322,6 +322,12 @@ async fn active_call_removal_lock_and_timeout_stop_inherited_process_groups_and_
         }
         marker(&markers.join("child.pid")).await;
         match action {
+            "disconnect" => {
+                integrations::disconnect(&app, &app.workspace.id(), "probe").unwrap();
+            }
+            "session_close" => {
+                app.end_session("test").unwrap();
+            }
             "remove" => {
                 integrations::remove(&app, "probe").unwrap();
             }
@@ -402,4 +408,211 @@ async fn readiness_is_unprobed_and_invalid_grants_cannot_start_processes() {
     );
     assert!(integrations::discover(&app, "probe").await.is_err());
     assert!(!markers.join("server.pid").exists());
+}
+
+async fn approved_probe(app: &Arc<App>, session: &str) -> serde_json::Value {
+    let mut events = app.events.subscribe();
+    let a = app.clone();
+    let session = session.to_string();
+    let call = tokio::spawn(async move {
+        tools::dispatch(
+            &a,
+            Agent::ChatGpt,
+            &session,
+            "call_integration_tool",
+            json!({"server_id":"probe","tool":"wait","arguments":{}}),
+        )
+        .await
+    });
+    loop {
+        if let BridgeEvent::ApprovalRequired { approval } = events.recv().await.unwrap() {
+            assert!(app.approvals.resolve(&approval.id, true));
+            break;
+        }
+    }
+    let result = call.await.unwrap();
+    assert_eq!(result.status, "ok", "{result:?}");
+    serde_json::from_str(
+        result.data.unwrap()["mcp_result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap()
+}
+#[tokio::test]
+async fn connections_reuse_process_only_within_the_conversation_and_idle_revocation_stops_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = fixture(&temp);
+    let markers = temp.path().join("markers");
+    std::fs::create_dir(&markers).unwrap();
+    let app = probe(&app, &markers, "counter", 5);
+    let first = approved_probe(&app, "conversation-one").await;
+    let second = approved_probe(&app, "conversation-one").await;
+    assert_eq!(first["pid"], second["pid"]);
+    assert_eq!(first["calls"], 1);
+    assert_eq!(second["calls"], 2);
+    assert_eq!(
+        integrations::health(&app, "probe").unwrap()["state"],
+        "connected"
+    );
+    let other = approved_probe(&app, "conversation-two").await;
+    assert_ne!(first["pid"], other["pid"]);
+    assert_eq!(other["calls"], 1);
+    assert_eq!(
+        integrations::health(&app, "probe").unwrap()["connected_sessions"],
+        2
+    );
+    let pid_one = markers.join("one.pid");
+    std::fs::write(&pid_one, first["pid"].to_string()).unwrap();
+    let mut workspace = app
+        .store
+        .workspaces()
+        .unwrap()
+        .into_iter()
+        .find(|w| w.id == app.workspace.id())
+        .unwrap();
+    workspace.read_only = true;
+    app.store.save_workspace(&workspace).unwrap();
+    stopped(&pid_one).await;
+    stopped(&markers.join("server.pid")).await;
+    assert_eq!(
+        integrations::health(&app, "probe").unwrap()["state"],
+        "blocked"
+    );
+    assert_eq!(
+        integrations::health(&app, "probe").unwrap()["connected_sessions"],
+        0
+    );
+}
+#[tokio::test]
+async fn dropping_a_running_call_kills_the_server_without_replay() {
+    let temp = tempfile::tempdir().unwrap();
+    let app = fixture(&temp);
+    let markers = temp.path().join("markers");
+    std::fs::create_dir(&markers).unwrap();
+    let app = probe(&app, &markers, "call", 30);
+    let mut events = app.events.subscribe();
+    let a = app.clone();
+    let call = tokio::spawn(async move {
+        tools::dispatch(
+            &a,
+            Agent::ChatGpt,
+            "test",
+            "call_integration_tool",
+            json!({"server_id":"probe","tool":"wait","arguments":{}}),
+        )
+        .await
+    });
+    loop {
+        if let BridgeEvent::ApprovalRequired { approval } = events.recv().await.unwrap() {
+            app.approvals.resolve(&approval.id, true);
+            break;
+        }
+    }
+    marker(&markers.join("child.pid")).await;
+    call.abort();
+    let _ = call.await;
+    stopped(&markers.join("server.pid")).await;
+    stopped(&markers.join("child.pid")).await;
+    assert!(!markers.join("completed").exists());
+    assert_eq!(
+        integrations::health(&app, "probe").unwrap()["connected_sessions"],
+        0
+    );
+}
+
+#[tokio::test]
+async fn disconnect_and_session_close_cancel_waiting_approval_and_initialization() {
+    for phase in ["approval", "initialize", "discovery"] {
+        for action in ["disconnect", "session_close"] {
+            let temp = tempfile::tempdir().unwrap();
+            let app = fixture(&temp);
+            let markers = temp.path().join("markers");
+            std::fs::create_dir(&markers).unwrap();
+            let app = probe(&app, &markers, phase, 30);
+            let mut events = app.events.subscribe();
+            let a = app.clone();
+            let call = tokio::spawn(async move {
+                tools::dispatch(
+                    &a,
+                    Agent::ChatGpt,
+                    "test",
+                    "call_integration_tool",
+                    json!({"server_id":"probe","tool":"wait","arguments":{}}),
+                )
+                .await
+            });
+            loop {
+                if let BridgeEvent::ApprovalRequired { approval } = events.recv().await.unwrap() {
+                    if phase != "approval" {
+                        assert!(app.approvals.resolve(&approval.id, true));
+                    }
+                    break;
+                }
+            }
+            if phase != "approval" {
+                marker(&markers.join(if phase == "initialize" {
+                    "initializing"
+                } else {
+                    "discovering"
+                }))
+                .await;
+            }
+            if action == "disconnect" {
+                integrations::disconnect(&app, &app.workspace.id(), "probe").unwrap();
+            } else {
+                app.end_session("test").unwrap();
+            }
+            let result = tokio::time::timeout(std::time::Duration::from_secs(4), call)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.status, "error", "{phase} / {action}: {result:?}");
+            assert_eq!(app.approvals.pending_count(), 0);
+            assert!(!markers.join("called").exists());
+            if phase == "approval" {
+                assert!(!markers.join("server.pid").exists());
+            } else {
+                stopped(&markers.join("server.pid")).await;
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn idle_expiry_disconnect_and_session_close_allow_only_explicit_reconnection() {
+    for action in ["expiry", "disconnect", "session_close"] {
+        let temp = tempfile::tempdir().unwrap();
+        let app = fixture(&temp);
+        let markers = temp.path().join("markers");
+        std::fs::create_dir(&markers).unwrap();
+        let app = probe(&app, &markers, "counter", 5);
+        let first = approved_probe(&app, "test").await;
+        match action {
+            "expiry" => {
+                tokio::time::pause();
+                tokio::time::advance(std::time::Duration::from_secs(301)).await;
+                tokio::time::resume();
+            }
+            "disconnect" => {
+                assert!(integrations::disconnect(&app, "wrong-workspace", "probe").is_err());
+                assert_eq!(
+                    integrations::health(&app, "probe").unwrap()["connected_sessions"],
+                    1
+                );
+                integrations::disconnect(&app, &app.workspace.id(), "probe").unwrap();
+            }
+            _ => {
+                app.end_session("test").unwrap();
+            }
+        }
+        stopped(&markers.join("server.pid")).await;
+        assert_eq!(
+            integrations::health(&app, "probe").unwrap()["connected_sessions"],
+            0
+        );
+        let second = approved_probe(&app, "test").await;
+        assert_ne!(first["pid"], second["pid"]);
+        assert_eq!(second["calls"], 1);
+    }
 }

@@ -442,18 +442,26 @@ async fn revoked_or_expired_approval_is_rechecked_before_later_mutations() {
         ));
     })
     .await;
-    enable(&app, 1, 20);
+    // The wall-clock expiry is stored in whole seconds. A one-second grant can
+    // expire almost immediately at a second boundary, before approval is used.
+    // Leave time to acquire the lease, then still prove that it expires.
+    enable(&app, 5, 20);
     yolo::scope(async {
-        app.request_approval(
-            &sid,
-            Agent::ChatGpt,
-            "write_document",
-            "fixture",
-            Some("files/lease.txt".into()),
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            app.request_approval(
+                &sid,
+                Agent::ChatGpt,
+                "write_document",
+                "fixture",
+                Some("files/lease.txt".into()),
+            ),
         )
         .await
+        .expect("grant should approve before expiry, without a manual prompt")
         .unwrap();
-        tokio::time::sleep(Duration::from_millis(1100)).await;
+        assert!(yolo::checkpoint(&app).is_ok());
+        tokio::time::sleep(Duration::from_millis(5100)).await;
         assert!(yolo::checkpoint(&app).is_err());
     })
     .await;

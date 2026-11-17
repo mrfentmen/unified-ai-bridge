@@ -1,6 +1,6 @@
 [package]
 name = "bridge-extension"
-version = "0.5.26"
+version = "0.5.30"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 bridge-core = { path = "../bridge-core" }
+base64.workspace = true
+sha2.workspace = true
+hex.workspace = true
 oxichrome.workspace = true
 leptos.workspace = true
 serde.workspace = true
@@ -25,6 +28,7 @@ web-sys = { workspace = true, features = [
     "MutationObserverInit", "MutationRecord", "KeyboardEvent", "MouseEvent",
     "Event", "EventTarget", "DomRect", "ShadowRoot", "ShadowRootInit",
     "ShadowRootMode", "CssStyleDeclaration", "Selection", "Range", "InputEvent",
-    "EventInit", "KeyboardEventInit", "HtmlDocument", "ScrollToOptions", "Navigator", "Clipboard"
+    "EventInit", "KeyboardEventInit", "HtmlDocument", "ScrollToOptions", "Navigator", "Clipboard",
+    "DataTransfer", "DataTransferItemList", "DataTransferItem", "File", "FileList", "FilePropertyBag", "Blob", "HtmlImageElement"
 ] }
 console_error_panic_hook = "0.1"

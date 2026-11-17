@@ -111,6 +111,7 @@ impl WebsiteBlock {
         {
             Some(Self::Quota)
         } else if [
+            "chat memory full",
             "context window full",
             "maximum length for this conversation",
             "conversation is too long",
@@ -231,6 +232,14 @@ mod tests {
     }
     #[test]
     fn context_and_quota_have_distinct_recovery() {
+        assert_eq!(
+            WebsiteBlock::from_notice("Chat memory full\nStart a new chat with an automatic summary of this conversation, or upgrade to continue here with expanded memory in every chat."),
+            Some(WebsiteBlock::ContextFull)
+        );
+        assert_eq!(
+            WebsiteBlock::from_notice("Chat memory full; usage limit reached"),
+            Some(WebsiteBlock::Quota)
+        );
         assert_eq!(
             WebsiteBlock::from_notice("Context window full\nNew chat"),
             Some(WebsiteBlock::ContextFull)

@@ -1,5 +1,6 @@
 pub mod artifacts;
 pub mod generated_files;
+pub mod uploads;
 pub mod archives;
 mod binary;
 pub mod large_recovery;
@@ -511,6 +512,7 @@ async fn dispatch_inner(
         "list_artifacts" => artifacts::list(&context, arguments).await,
         "list_generated_files" => generated_files::list(&context, arguments).await,
         "request_download" => generated_files::download(&context, arguments).await,
+        "attach_file_to_chat" => uploads::attach(&context, arguments).await,
         "import_artifact" => artifacts::import(&context, arguments).await,
         "list_files" => filesystem::list_files(&context, arguments).await,
         "read_file" => filesystem::read_file(&context, arguments).await,

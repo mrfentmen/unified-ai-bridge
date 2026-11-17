@@ -17,8 +17,58 @@ pub struct Scope {
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
     List,
-    Inspect { handle: String },
-    Download { file: GeneratedFile },
+    Inspect {
+        handle: String,
+    },
+    Download {
+        file: GeneratedFile,
+    },
+    InspectUpload,
+    Upload {
+        file: UploadFile,
+        turn_id: String,
+        attempt_id: String,
+    },
+}
+
+pub const MAX_UPLOAD_BYTES: usize = 512 * 1024;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UploadFile {
+    pub name: String,
+    pub mime: String,
+    pub bytes: usize,
+    pub sha256: String,
+    pub base64: String,
+}
+
+/// Only the exact successful upload receipt can authorize submission of the
+/// attachment staged for it. Mentioning an ID in prose is not authorization.
+pub fn has_upload_receipt(text: &str, id: &str, sha256: &str) -> bool {
+    upload_receipt(text)
+        .is_some_and(|(actual_id, actual_hash)| actual_id == id && actual_hash == sha256)
+}
+pub fn upload_receipt(text: &str) -> Option<(String, String)> {
+    text.split(crate::protocol::RESULT_OPEN)
+        .skip(1)
+        .find_map(|block| {
+            let Some((payload, _)) = block.split_once(crate::protocol::RESULT_CLOSE) else {
+                return None;
+            };
+            let v = serde_json::from_str::<serde_json::Value>(payload.trim()).ok()?;
+            if v["tool"] == "attach_file_to_chat"
+                && v["status"] == "ok"
+                && v["data"]["state"] == "attached"
+            {
+                Some((
+                    v["data"]["upload_id"].as_str()?.into(),
+                    v["data"]["sha256"].as_str()?.into(),
+                ))
+            } else {
+                None
+            }
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +118,28 @@ pub fn source_key(parts: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn attachment_submission_needs_the_exact_successful_receipt() {
+        let receipt = serde_json::json!({"tool":"attach_file_to_chat","status":"ok","data":{"state":"attached","upload_id":"owned","sha256":"hash"}});
+        let text = crate::protocol::format_tool_result(&receipt);
+        assert!(has_upload_receipt(&text, "owned", "hash"));
+        assert!(!has_upload_receipt(&text, "other", "hash"));
+        assert!(!has_upload_receipt(&text, "owned", "different"));
+        assert!(!has_upload_receipt(
+            "[[BRIDGE_RESULT]] owned hash",
+            "owned",
+            "hash"
+        ));
+        for key in ["tool", "status"] {
+            let mut wrong = receipt.clone();
+            wrong[key] = "other".into();
+            assert!(!has_upload_receipt(
+                &crate::protocol::format_tool_result(&wrong),
+                "owned",
+                "hash"
+            ));
+        }
+    }
     #[test]
     fn file_capabilities_are_strict_and_bound_to_the_source() {
         let file = GeneratedFile {

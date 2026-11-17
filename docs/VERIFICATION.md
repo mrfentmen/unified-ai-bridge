@@ -1,5 +1,72 @@
 # Verification record
 
+## Focused finish pass 0.5.30 — November 17, 2026
+
+This pass adds persistent conversation-owned native MCP connections, a bounded experimental ChatGPT upload workflow, simpler everyday controls and recognition of the observed **Chat memory full** notice. The existing general/standard scratch workspace retained **16 calls/task, 4/response, network off and YOLO off**. No archaeology files or macOS permissions were changed. Other providers retain their individually qualified historical rows below; they were not recertified on this final bundle.
+
+### Build and automated checks
+
+Source, extension package, generated manifest, Chrome management card, actual panel and native hello all report **0.5.30 / protocol 10**. The pinned `cargo bridge-deploy` command completed with `BUILD AND INSTALL PASS`; the extension was actually reloaded and the owned provider tab refreshed.
+
+```text
+native 7c7e00ec88950add0d9c74807ad5fb26575d292c5dfdea2569aee2d059639248
+WASM   0293ebaf52c6a752fa6f14eb8ad1e319d5028b2940297dc16706a61eef14fc3f
+2026-11-17T14:55:29.868Z [info] extension hello (0.5.30)
+```
+
+`cargo test --workspace` on 0.5.29 exited 0: **268 passed, 0 failed, 1 intentionally ignored long command test**. The final 0.5.30 change adds a notice alias and checks for a website block during submission; all **45 core + 6 extension tests** passed afterward. Installed 0.5.30 `selftest`: **41 passed, 0 failed**. Doctor passed configuration, workspace, native origin/path, installed binary, SQLite and **1,151 matching database/file audit entries** at its final snapshot. Actual platform: macOS 27.0.1, ARM; physical older Intel acceptance and stable signing remain unverified.
+
+A failed development run is retained: the 0.5.28 YOLO expiry test used a one-second grant, which expired at a whole-second clock boundary before approval, then waited 180 seconds and failed. The test now allows five seconds to obtain the lease, bounds approval acquisition to two seconds, verifies the lease is initially valid and proves it expires after 5.1 seconds. Production expiry policy was unchanged. A 0.5.30 deployment first refused an inconsistent lock/package version; correcting the extension package version made the normal locked deployment pass.
+
+### Real ChatGPT files and recovery
+
+The model read existing `files/chatgpt-0525.txt`, then created `output/finish-0529.rs` and `notes/finish-0529.md` on 0.5.29. Code creation returned in-conversation. ChatGPT then displayed **Chat memory full** while the document result remained queued. The observed wording was missing from context detection; 0.5.30 recognizes it. Reload preserved the queued result. After inspecting the transcript, the test explicitly acknowledged the unsent result and cleared only its own restored draft, whose line-break normalization prevented automatic ownership recognition. **Continue in fresh chat** then prepared/bound a handoff with **13 calls remaining**; both files were read back and the model stopped. This is recovered acceptance with manual intervention, not an uninterrupted run.
+
+```text
+14:48:54.698Z read_file       files/chatgpt-0525.txt      ok
+14:49:05.674Z write_document  output/finish-0529.rs       ok
+14:49:14.677Z write_document  notes/finish-0529.md        ok
+14:56:57.365Z task handoff Prepare
+14:57:01.452Z task handoff Bind
+14:57:13.720Z read_file       output/finish-0529.rs       ok
+14:57:21.933Z read_file       notes/finish-0529.md        ok
+```
+
+Both reads returned to the destination conversation, and independent disk/SQLite inspection found one committed change record for each file. The final source contains exactly `fn bridge_verified() -> bool { true }` plus newline, **38 bytes**, SHA256 `49c2b502e183609391948ecdcb88599ae4c8440fcbe6ae5f88d52ee86f77ea72`. Markdown contains the acceptance heading and statement, **87 bytes**, SHA256 `33a4cb229a6b6ee07cd50a7f251c92779a88010e2ba1b20d0fbb901668241019`. No duplicate write occurred. SPA navigation mounted the panel in the fresh conversation with a new host-issued session.
+
+### Actual downloaded file and approval controls
+
+The real `bridge-roundtrip-0526.svg` downloaded earlier on 0.5.26 was selected by name/size in **Browser files** and explicitly shared with the fresh ChatGPT conversation. This completes a manual cross-session continuation of the earlier download, not automatic attribution of a website-button download.
+
+The model listed the shared artifact and requested `import_artifact`. In-page **Deny** resolved at **14:59:03.537Z**; `approval_denied` reached the conversation and the destination was absent. A new explicit user task requested a fresh import. The actual **docked side panel** displayed the exact filename, 284-byte count, hash and destination; its **Approve once** resolved at **15:01:49.448Z**. The host imported the file at **15:01:49.484Z**, and the model calculated its hash at **15:01:59.653Z**. Both results and the stopped summary appeared in the same destination conversation while the provider tab was hidden for more than 30 seconds.
+
+```text
+source      ~/Downloads/bridge-roundtrip-0526.svg
+workspace   ~/bridge-acceptance-0521/files/bridge-roundtrip-0530.svg
+bytes       284
+both SHA256 660857e11290d600402e163e271d43deddb49ddb6f593774ab4149e4df3a4831
+```
+
+The original download remains unchanged. The panel/model handle-retention source fix is present, but simultaneous discovery from both surfaces has not yet been proven in a live file-generation task. The actual docked panel Stop control disconnected the sole connected test chat; explicit reconnect registered it again. The actual toolbar popup was opened separately and its workspace, chat, file exchange, advanced controls and refreshed status were inspected. Its Deny button also rejected an explicitly requested test PDF; the destination remained absent. ChatGPT reached its context limit again before accepting that denial result, which stayed saved for handoff.
+
+### Outbound image limits and development evidence
+
+The first real bridge upload on 0.5.27 disclosed the explicitly approved `files/public-pdf-page.png`, **19,901 bytes**, SHA256 `6bdc49ae22aac99c95725e2355f3ccaf96e49dec339e5926c42a2dece686a90c`. The actual image attachment reached ChatGPT, but the completion selector missed its `div[role=button]` image card. The host timed out at **14:32:23.079Z** and did not repeat the upload. Manual Send of the existing card let ChatGPT correctly describe the white page and quote **Dummy PDF file**. This is real visual receipt after manual recovery, not automatic success.
+
+The adapter now handles both observed image and text-file card forms, waits on DOM mutations with a timer fallback, checks attachment ownership before any automated send, and permits ordinary text setup when an upload input has not mounted. ChatGPT then showed **You’re out of attachments for now**, with a next-day reset. No quota bypass or further upload attempt was made. Automatic attachment completion/submission on the final bundle remains **unverified**. Direct Playwright upload of a small text file was only website-reference evidence, not bridge acceptance.
+
+Two native test functions cover exact approved bytes, denial, file/hash changes, locking, ended sessions, uncertain attempts and restart replay, unsafe paths, symlink/hardlink escapes, sizes, types, unknown fields and unsupported providers. Core tests ensure only a matching successful receipt can authorize attachment submission. Transport fixtures are labeled and do not count as provider success.
+
+### Real native application and connection lifecycle
+
+Eight integration tests cover real subprocess reuse, session isolation, explicit disconnect, grant removal, locking, session end, cancellation during approval/initialization/discovery/call, inherited-child cleanup, and idle expiry. Expiry advances Tokio’s clock but kills actual processes. Discovery is temporary; approved calls retain a connection up to five idle minutes. External native programs retain OS account rights and can cause effects that disconnect cannot reverse.
+
+An isolated framed host ran installed native `rust-analyzer-mcp` 0.4.0 against a real Cargo test project. The first attempt failed because its rust-analyzer dependency was not in a searched location. A symlink to the already installed native binary at `~/.cargo/bin/rust-analyzer` resolved that; the bridge’s sanitized PATH and native-only rule were unchanged. Two separately approved `rust_analyzer_symbols` calls returned the actual `bridge_marker` function in `src/lib.rs`. Status reported one retained session, then zero after explicit disconnect. This proves that native symbol-inspection workflow; it was not a browser-model application test.
+
+Installed Roblox Studio’s native MCP proxy also handled two approved `list_roblox_studios` calls and disconnect, but returned `studios: []`. A temporary labeled test place was launched; no user game was edited. There was no connected place to inspect, so Roblox workflow acceptance remains open. Other tools on those servers were not implied to work.
+
+Raw logs and AX evidence are retained privately under ignored `docs/evidence/0.5.30/`. Public evidence omits unrelated browser content and credentials. See [FINISH-PLAN.md](FINISH-PLAN.md) for the remaining acceptance gates.
+
 ## Generated-file controls 0.5.26 — November 17, 2026
 
 Added `list_generated_files` and `request_download` through the normal native dispatch, task budget, approval and audit paths. The model supplies an opaque handle, never a URL, local source path or identity. Handles bind to a session, workspace, conversation, task and rendered assistant file control, with a five-minute lifetime. Durable claims prevent repeat download attempts after rediscovery or host/session restart. Browser requests have bounded lifetimes and exact reply scopes. The existing byte-preserving importer handles the final copy.

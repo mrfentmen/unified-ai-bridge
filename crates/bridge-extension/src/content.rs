@@ -27,6 +27,8 @@ use crate::model::{ActivityView, ApprovalView, BackgroundResponse, StatusView};
 mod recovery;
 #[path = "generated_files.rs"]
 mod generated_files;
+#[path = "uploads.rs"]
+mod uploads;
 use bridge_core::recovery::{pending_result_state, DeliveryRetry, FormatRepairBudget, PendingResultState, WebsiteBlock};
 
 const POLL_MS: i32 = 2_000;
@@ -126,6 +128,17 @@ pub async fn bridge_content() {
         move |message, _, respond| {
             if let Some(value) = js::from_js::<Value>(message) {
                 if value["type"] == "browser_operation" {
+                    if matches!(value["action"]["action"].as_str(),Some("inspect_upload" | "upload")) {
+                        if let Some(respond)=js::function(&respond) {
+                            let state=updates.clone();
+                            spawn_local(async move {
+                                let result=uploads::handle(state,value).await;
+                                js::respond(&respond,&json!(result));
+                            });
+                            return JsValue::TRUE;
+                        }
+                        return JsValue::FALSE;
+                    }
                     let outcome: Result<Value,String> = if value["expires_at_ms"].as_f64().unwrap_or(0.0)<=js::now_ms() {
                         Err("Browser operation expired; inspect downloads before retrying.".into())
                     } else { serde_json::from_value(value["scope"].clone()).map_err(|_|"Invalid browser scope.".to_string())
@@ -2547,6 +2560,7 @@ impl Adapter {
             .ok()
             .and_then(|url| self.provider.conversation_id(&url));
         let check_route = || -> Result<(), String> {
+            uploads::check_send(self, document, text)?;
             if context_current.is_some_and(|current| !current()) {
                 return Err("workspace or conversation changed before submission".into());
             }
@@ -2610,6 +2624,7 @@ impl Adapter {
         // still-disabled button and reporting a false success.
         let mut clicked = false;
         for _ in 0..30 {
+            if let Some(block)=recovery::website_block(self,document) { return Err(block.message().into()); }
             check_route()?;
             if composer_text(&composer) != inserted {
                 return Err("The result draft changed before submission; it was not sent.".into());
@@ -2628,11 +2643,13 @@ impl Adapter {
             if let Some(block)=recovery::website_block(self,document) { return Err(block.message().into()); }
             return Err("The website has not acknowledged submission. The result is saved; automatic resubmission is paused to avoid duplicates. Inspect the chat before using Send pending result.".into());
         }
+        if let Some(block)=recovery::website_block(self,document) { return Err(block.message().into()); }
         check_route()?;
         press_enter(&composer)?;
         if wait_for_send(self,document,text,preceding_user).await {
             return Ok(());
         }
+        if let Some(block)=recovery::website_block(self,document) { return Err(block.message().into()); }
         Err("the website did not accept the message (composer never cleared); the adapter may need an update".into())
     }
 
