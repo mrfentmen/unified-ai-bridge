@@ -4,6 +4,8 @@
 
 This pass adds persistent conversation-owned native MCP connections, a bounded experimental ChatGPT upload workflow, simpler everyday controls and recognition of the observed **Chat memory full** notice. The existing general/standard scratch workspace retained **16 calls/task, 4/response, network off and YOLO off**. No archaeology files or macOS permissions were changed. Other providers retain their individually qualified historical rows below; they were not recertified on this final bundle.
 
+Published source commit **1b59b1c9b0f5ca1af2b89a46710179d7e7d81d73** to public `main`. [CI run 44111377281](https://github.com/mrfentmen/unified-ai-bridge/actions/runs/44111377281) was queued when this publication entry was written; queued is not a passing result.
+
 ### Build and automated checks
 
 Source, extension package, generated manifest, Chrome management card, actual panel and native hello all report **0.5.30 / protocol 10**. The pinned `cargo bridge-deploy` command completed with `BUILD AND INSTALL PASS`; the extension was actually reloaded and the owned provider tab refreshed.
@@ -47,7 +49,7 @@ bytes       284
 both SHA256 660857e11290d600402e163e271d43deddb49ddb6f593774ab4149e4df3a4831
 ```
 
-The original download remains unchanged. The panel/model handle-retention source fix is present, but simultaneous discovery from both surfaces has not yet been proven in a live file-generation task. The actual docked panel Stop control disconnected the sole connected test chat; explicit reconnect registered it again. The actual toolbar popup was opened separately and its workspace, chat, file exchange, advanced controls and refreshed status were inspected. Its Deny button also rejected an explicitly requested test PDF; the destination remained absent. ChatGPT reached its context limit again before accepting that denial result, which stayed saved for handoff.
+The original download remains unchanged. The panel/model handle-retention source fix is present, but simultaneous discovery from both surfaces has not yet been proven in a live file-generation task. The actual docked panel Stop control disconnected the sole connected test chat; explicit reconnect registered it again. The actual toolbar popup was opened separately and its workspace, chat, file exchange, advanced controls and refreshed status were inspected. Its Deny button also rejected an explicitly requested test PDF; the destination remained absent. ChatGPT reached its context limit again before accepting that denial result, which stayed saved for handoff. The subsequent new-chat submission displayed **Your account changed. Send your message again** and remained a local draft. It was not retried across that account change; denial delivery from this last popup test remains incomplete.
 
 ### Outbound image limits and development evidence
 

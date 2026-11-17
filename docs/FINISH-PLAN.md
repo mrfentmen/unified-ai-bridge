@@ -29,14 +29,14 @@ The bridge now creates and reads back real code and documents, imports an explic
 
 - [x] Put workspace, connected chats, approvals, file exchange and Stop first. Group advanced controls without removing existing tools.
 - [x] Verify in-page denial and docked-side-panel approval with the real SVG import. Stop disconnected the owned test chat; reconnect restored its session. The import result and hash returned while the tab was hidden.
-- [x] Open the actual toolbar popup and verify its workspace, connected session, everyday controls and Refresh status. The docked panel was tested separately.
+- [x] Open the actual toolbar popup and verify its workspace, connected session, everyday controls and Refresh status. Popup Deny blocked a test PDF; the later handoff paused at the website’s account-change notice.
 
 ## 5 Release evidence
 
 - [x] Pass the complete workspace suite: 268 passed, 0 failed, 1 intentionally ignored long command test on 0.5.29. The final 0.5.30 notice/send changes passed all 45 core and 6 extension tests. Installed 0.5.30 selftest passed 41 checks. Doctor passed configuration, native manifest, binary, SQLite and audit checks.
 - [x] Build and install with the pinned deployment command; source, generated manifest, Chrome card, live panel and host hello all report 0.5.30 / protocol 10.
 - [x] Verify actual code/document writes and read-backs, selected-file import and a native application inspection. Preserve failures and manual recovery steps in VERIFICATION.md.
-- [ ] Publish reviewed source and inspect GitHub CI. The final commit and CI outcome are recorded with the delivery message.
+- [x] Publish reviewed source to GitHub main as 1b59b1c and inspect CI run 44111377281. The run was queued at publication; this is not a CI pass.
 
 ## Remaining external gates
 
