@@ -1,5 +1,7 @@
 # Next implementation tasks
 
+The 0.5.22 work adds opt-in YOLO automatic approvals for routine local writes, with expiry, an approval cap, audit and Stop. It preserves separate command/delete/network permissions and narrower session grants. Host restart and workspace/policy changes turn it off. Session reconciliation also replaces stale registrations after transport recovery without replaying tool requests. Current verification is recorded in [VERIFICATION.md](VERIFICATION.md); broader UAB-03/04 acceptance remains open.
+
 This is the actionable backlog after 0.5.0, updated November 17, 2026. Boxes are checked only when their stated acceptance conditions have passed; remaining boxes are **open**. Tool names are proposals until their schemas and behavior are implemented and tested. Adding a task does not grant OS permissions, enable an integration, authorize uploads, or schedule unattended execution.
 
 Current capabilities come from `crates/bridge-core/src/catalog.rs`; live evidence belongs in [VERIFICATION.md](VERIFICATION.md). Ordinary file editing, append/copy/trash/restore, batch reads, glob/tree/diff, Git status/diff, approved commands, native MCP discovery/calls, and selected-download imports already exist. Extend them where indicated instead of creating duplicate tools.

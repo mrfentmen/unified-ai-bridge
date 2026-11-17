@@ -12,6 +12,10 @@ pub fn refresh_live_sessions(live: &mut Vec<SessionView>, stored: Vec<SessionVie
     *live = stored.into_iter().filter(|s| ids.contains(&s.id)).collect();
 }
 
+pub fn session_missing(status: &StatusView, id: Option<&str>) -> bool {
+    id.is_some_and(|id| !status.sessions.iter().any(|s|s.id == id))
+}
+
 #[cfg(test)]
 mod session_tests {
     use super::*;
@@ -40,6 +44,20 @@ mod session_tests {
             }],
         );
         assert!(live.is_empty());
+    }
+
+    #[test]
+    fn host_restart_invalidates_the_old_session_until_registered_again() {
+        let mut status = StatusView::default();
+        status.bridge = "connected".into();
+        status.sessions = vec![SessionView {id:"old".into(),..Default::default()}];
+        assert!(!session_missing(&status,Some("old")));
+        status.sessions.clear();
+        assert!(session_missing(&status,Some("old")));
+        status.sessions.push(SessionView{id:"replacement".into(),..Default::default()});
+        assert!(session_missing(&status,Some("old")));
+        assert!(!session_missing(&status,Some("replacement")));
+        assert!(!session_missing(&status,None));
     }
 }
 
@@ -115,6 +133,8 @@ pub struct ApprovalView {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StatusView {
+    #[serde(default)]
+    pub yolo: Value,
     #[serde(default)]
     pub task_states: Vec<Value>,
     #[serde(default)]

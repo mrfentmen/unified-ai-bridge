@@ -43,6 +43,7 @@ pub enum ExtToHost {
         session_id: String,
     },
     Status,
+    YoloControl { request_key: String, workspace_id: String, action: crate::yolo::Control },
     RecoveryControl {
         request_key: String,
         workspace_id: String,
@@ -201,6 +202,7 @@ pub enum HostToExt {
         allowed: bool,
     },
     StatusReply {
+        yolo: Value,
         task_states: Vec<Value>,
         bridge: String,
         host_version: String,

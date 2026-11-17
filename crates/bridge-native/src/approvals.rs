@@ -17,6 +17,7 @@ struct Pending {
 
 #[derive(Default)]
 pub struct ApprovalManager {
+    pub yolo: crate::yolo::Manager,
     pending: Mutex<HashMap<String, Pending>>,
 }
 

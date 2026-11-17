@@ -145,6 +145,7 @@ fn bridge_ui(wide: bool) -> impl IntoView {
 
             <WorkspaceControls status=status error=error/>
             <ReadinessControls status=status error=error/>
+            <YoloControls status=status error=error/>
             <WriteGrantControls status=status error=error/>
             <CommandControls status=status error=error/>
             <ArtifactControls status=status error=error/>
@@ -1275,6 +1276,52 @@ fn JobControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) ->
             <pre style="white-space:pre-wrap;overflow:auto;max-height:260px">{move||detail.get()}</pre>
             <pre style="white-space:pre-wrap;overflow:auto;max-height:260px">{move||output.get()}</pre>
         </details>
+    }
+}
+
+#[component]
+fn YoloControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -> impl IntoView {
+    let seconds = RwSignal::new(String::from("28800"));
+    let limit = RwSignal::new(String::from("200"));
+    let busy = RwSignal::new(false);
+    let request = move |action: serde_json::Value| {
+        if busy.get_untracked() { return; }
+        let workspace = status.get_untracked().active_id;
+        busy.set(true);
+        spawn_local(async move {
+            match workspace_request(json!({"op":"yolo_control","workspace_id":workspace,"action":action})).await {
+                Ok(value) => {
+                    if status.get_untracked().active_id == workspace {
+                        status.update(|s|s.yolo=value["yolo"].clone());
+                        error.set(None);
+                    }
+                }
+                Err(e) => error.set(Some(e)),
+            }
+            busy.set(false);
+            refresh(status,error);
+        });
+    };
+    view! {
+        <section style="border:1px solid #916c32;padding:10px;margin:10px 0">
+            <strong>{move || if status.get().yolo["active"] == true {"YOLO · ON"} else {"YOLO · OFF"}}</strong>
+            <p>"Automatically approve local text/code edits, write-only patches, folders, copies, PDF creation, image/media transforms, page previews, spreadsheet copies and archive creation in this workspace, for all registered chats."</p>
+            <p>"Deletes, restores, imports, extraction, network access, Git commits and desktop control keep their own approvals. Commands keep their separate Always allow setting. Folder boundaries, protected files, checkpoints and task limits still apply."</p>
+            <div style="font-family:monospace;word-break:break-all">{move||status.get().workspace}</div>
+            <label>"Duration "<select aria-label="YOLO duration" style=CONTROL_STYLE prop:value=move||seconds.get() on:change=move|ev|seconds.set(event_target_value(&ev))>
+                <option value="3600">"1 hour"</option><option value="14400">"4 hours"</option><option value="28800">"8 hours"</option><option value="43200">"12 hours"</option>
+            </select></label>
+            <label>"Automatic approval cap "<input aria-label="YOLO approval cap" type="number" min="1" max="10000" style=CONTROL_STYLE prop:value=move||limit.get() on:input=move|ev|limit.set(event_target_value(&ev))/></label>
+            <button style=CONTROL_STYLE disabled=move||busy.get() || status.get().bridge!="connected" || status.get().yolo["active"]==true on:click=move |_| {
+                match (seconds.get().parse::<u64>(),limit.get().parse::<u32>()) {
+                    (Ok(seconds),Ok(max_approvals))=>request(json!({"operation":"enable","seconds":seconds,"max_approvals":max_approvals})),
+                    _=>error.set(Some("YOLO duration and cap must be positive whole numbers.".into())),
+                }
+            }>"Enable YOLO for this workspace"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get() || status.get().bridge!="connected" on:click=move |_|request(json!({"operation":"stop"}))>"Stop YOLO"</button>
+            <div>{move||{let y=status.get().yolo;if y["expires_at"].is_number(){format!("{} seconds left · {} / {} automatic approvals used",y["remaining_seconds"],y["used_approvals"],y["max_approvals"])}else{String::new()}}}</div>
+            <small>"Off by default. Host restart, workspace switch or policy change turns it off. Stop restores normal approval rules; already executing work may finish. It does not cancel command jobs. macOS permission dialogs still require your permission."</small>
+        </section>
     }
 }
 

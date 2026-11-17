@@ -17,3 +17,4 @@ pub mod tasks;
 pub mod tools;
 pub mod wire;
 pub mod workspace;
+pub mod yolo;

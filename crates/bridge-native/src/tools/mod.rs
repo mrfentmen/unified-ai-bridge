@@ -435,6 +435,16 @@ pub async fn dispatch(
     tool: &str,
     arguments: Value,
 ) -> ToolResultMessage {
+    crate::yolo::scope(dispatch_inner(app, agent, session_id, tool, arguments)).await
+}
+
+async fn dispatch_inner(
+    app: &App,
+    agent: Agent,
+    session_id: &str,
+    tool: &str,
+    arguments: Value,
+) -> ToolResultMessage {
     let started = Instant::now();
     let Some(spec) = catalog::find(tool) else {
         return ToolResultMessage::error(tool, "unknown_tool", format!("unknown tool `{tool}`"));

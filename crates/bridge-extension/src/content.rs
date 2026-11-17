@@ -84,6 +84,7 @@ pub async fn bridge_content() {
         workspace_id: String::new(),
         pending_workspace_context: false,
         host_version: String::new(),
+        yolo: Value::Null,
         instructions: String::new(),
         instructions_draft: Rc::default(),
         sending_instructions: false,
@@ -116,6 +117,12 @@ pub async fn bridge_content() {
     let listener = Closure::<dyn FnMut(JsValue, JsValue, JsValue) -> JsValue>::new(
         move |message, _, respond| {
             if let Some(value) = js::from_js::<Value>(message) {
+                if value["type"] == "bridge_status_changed" {
+                    spawn_local(poll_status(updates.clone()));
+                    if let Some(respond) = js::function(&respond) {
+                        js::respond(&respond, &json!({"ok":true}));
+                    }
+                }
                 if value["type"] == "workspace_changed" {
                     update_workspace(
                         &updates,
@@ -180,6 +187,7 @@ struct ContentState {
     workspace_id: String,
     pending_workspace_context: bool,
     host_version: String,
+    yolo: Value,
     instructions: String,
     instructions_draft: Rc<RefCell<Option<String>>>,
     sending_instructions: bool,
@@ -756,6 +764,8 @@ fn render(state: &ContentState) {
         ("#5aa9e6", "Executing local tool…".to_string())
     } else if state.pending_result.is_some() {
         ("#e0b25a", "Result ready · composer is busy".to_string())
+    } else if state.session_id.is_none() || state.bridge != "connected" {
+        ("#e0a63a", "Reconnecting local session…".to_string())
     } else if state.connected {
         (
             "#43bf7f",
@@ -777,7 +787,8 @@ fn render(state: &ContentState) {
     ui.workspace_line.set_text_content(Some(&workspace));
     ui.workspace_line.set_attribute("title", &workspace).ok();
     ui.bridge_line
-        .set_text_content(Some(&format!("native bridge: {}", state.bridge)));
+        .set_text_content(Some(&format!("native bridge: {}{}", state.bridge,
+            if state.yolo["active"] == true { format!(" · YOLO ON · {}s left",state.yolo["remaining_seconds"]) } else { String::new() })));
 
     let composer_present = state.adapter.composer(&document).is_some();
     let warning = state
@@ -918,7 +929,7 @@ fn route_current(shared: &Rc<RefCell<ContentState>>, epoch: u64) -> bool {
 async fn register_session(shared: Rc<RefCell<ContentState>>) {
     let (conversation, url, epoch) = {
         let mut state = shared.borrow_mut();
-        if state.registering {
+        if state.registering || state.paused {
             return;
         }
         state.registering = true;
@@ -929,7 +940,9 @@ async fn register_session(shared: Rc<RefCell<ContentState>>) {
             state.route_epoch,
         )
     };
-    let key = memory_key(&shared.borrow());
+    // Recovery must not replace newer in-memory task/delivery state with a
+    // storage write that may still be pending from this same page.
+    let key = if shared.borrow().memory.workspace_id.is_empty() { memory_key(&shared.borrow()) } else { None };
     if let Some(key) = key {
         if let Ok(Some(memory)) = oxichrome::storage::get::<ConversationMemory>(&key).await {
             if route_current(&shared, epoch) {
@@ -948,6 +961,7 @@ async fn register_session(shared: Rc<RefCell<ContentState>>) {
         shared.borrow_mut().registering = false;
         return;
     }
+    if shared.borrow().paused { shared.borrow_mut().registering = false; return; }
     {
         let mut state = shared.borrow_mut();
         state.registering = false;
@@ -1240,10 +1254,13 @@ async fn poll_status(state: Rc<RefCell<ContentState>>) {
         return;
     }
     sync_conversation(&state);
+    let snapshot = { let s=state.borrow(); (s.route_epoch,s.session_id.clone(),s.registering) };
     let response = oxichrome::runtime::send_message(&json!({"op":"status"})).await;
     let Some(status) = response.ok().and_then(js::from_js::<StatusView>) else {
         return;
     };
+    // An earlier status response cannot invalidate a newer registration or route.
+    { let s=state.borrow(); if s.paused || snapshot != (s.route_epoch,s.session_id.clone(),s.registering) { return; } }
     if !state.borrow().workspace_id.is_empty()
         && !status.active_id.is_empty()
         && state.borrow().workspace_id != status.active_id
@@ -1267,6 +1284,13 @@ async fn poll_status(state: Rc<RefCell<ContentState>>) {
         }
         state.auto_connect = status.auto_connect;
         state.host_version = status.host_version.clone();
+        state.yolo = status.yolo.clone();
+        if !state.registering && crate::model::session_missing(&status,state.session_id.as_deref()) {
+            state.session_id = None;
+            state.session_approval = None;
+            state.last_register_ms = 0.0;
+            // Keep processed calls, task identity and pending results intact.
+        }
         if let Some(task) = status.task_states.iter().find(|t|
             t["workspace_id"].as_str()==Some(&state.workspace_id)
             && t["provider"].as_str()==Some(state.provider.slug())
@@ -1294,6 +1318,7 @@ async fn poll_status(state: Rc<RefCell<ContentState>>) {
                 .collect();
         }
         if state.session_id.is_none()
+            && status.bridge == "connected"
             && !state.registering
             && js::now_ms() - state.last_register_ms > 12_000.0
         {

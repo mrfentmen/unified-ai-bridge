@@ -551,6 +551,7 @@ pub async fn run() -> Result<()> {
                 let audit_valid = app.store.verify_audit().map(|v| v.valid).unwrap_or(false);
                 let _ = tx
                     .send(HostToExt::StatusReply {
+                        yolo: crate::yolo::status(&app),
                         task_states: app.store.tasks(&app.workspace.id()).unwrap_or_default().into_iter().map(|t|
                             serde_json::json!({"workspace_id":t.workspace_id,"provider":t.provider,"conversation":t.conversation,"task_id":t.task_id,"state":t.state})).collect(),
                         bridge: "connected".into(),
@@ -668,6 +669,7 @@ pub async fn run() -> Result<()> {
                     info.read_only = read_only;
                     info.permission_mode = permission_mode;
                     app.store.save_workspace(&info)?;
+                    crate::yolo::stop(&app, "workspace policy changed")?;
                     let mut workspace = app.workspace.clone();
                     workspace.read_only = read_only;
                     workspace.permission_mode = permission_mode;
@@ -787,6 +789,14 @@ pub async fn run() -> Result<()> {
                     crate::jobs::control(&app, &workspace_id, action),
                 )
                 .await;
+            }
+            ExtToHost::YoloControl {request_key,workspace_id,action} => {
+                if !is_ready(&hello) {
+                    send_error(&tx,"hello_required","send hello before YOLO controls".into(),Some(request_key)).await;
+                    continue;
+                }
+                log.write("info",&format!("panel YOLO control {action:?} workspace={workspace_id} request={request_key}"));
+                send_control(&tx,request_key,crate::yolo::control(&app,&workspace_id,action)).await;
             }
             ExtToHost::TaskControl {request_key,workspace_id,action} => {
                 if !is_ready(&hello) {

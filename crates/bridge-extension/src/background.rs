@@ -103,6 +103,7 @@ impl BgState {
             "active_id": self.details.get("active_id").cloned().unwrap_or_else(||json!("")),
             "workspaces": self.details.get("workspaces").cloned().unwrap_or_else(|| json!([])),
             "task_states": self.details.get("task_states").cloned().unwrap_or_else(|| json!([])),
+            "yolo": if self.ready { self.details["yolo"].clone() } else { json!({"active":false}) },
             "capabilities": self.details.get("capabilities").cloned().unwrap_or_default(),
             "in_flight": self.pending_tools.len().max(self.details["in_flight"].as_u64().unwrap_or(0) as usize),
             "database_path": self.details.get("database_path").cloned().unwrap_or_else(||json!("")),
@@ -181,6 +182,7 @@ enum BgRequest {
         action: Value,
     },
     TaskControl { workspace_id: String, action: Value },
+    YoloControl { workspace_id: String, action: Value },
     NetworkControl { workspace_id: String, action: Value },
     Preflight,
     CreateWriteGrant {
@@ -555,6 +557,7 @@ fn handle_message(
             // onDisconnect would race the new port and clear its state.
             match ensure_native(&state, true) {
                 Ok(()) => {
+                    wake_provider_status();
                     if let Err(err) = send_native(&state, json!({"type":"status"})) {
                         js::respond(&respond_fn, &json!({"ok":false,"error":err}));
                     } else {
@@ -687,6 +690,7 @@ fn handle_message(
         | BgRequest::RecoveryControl { .. }
         | BgRequest::JobControl { .. }
         | BgRequest::TaskControl { .. }
+        | BgRequest::YoloControl { .. }
         | BgRequest::NetworkControl { .. }
         | BgRequest::Preflight
         | BgRequest::CreateWriteGrant { .. }
@@ -753,6 +757,7 @@ fn handle_message(
                     action,
                 } => json!({"type":"job_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::TaskControl {workspace_id,action} => json!({"type":"task_control","workspace_id":workspace_id,"action":action}),
+                BgRequest::YoloControl {workspace_id,action} => json!({"type":"yolo_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::NetworkControl {workspace_id,action} => json!({"type":"network_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::Preflight => json!({"type":"preflight"}),
                 BgRequest::CreateWriteGrant {
@@ -978,6 +983,7 @@ fn stop_native(state: &Rc<RefCell<BgState>>, message: &str, retry: bool) {
     for respond in responders {
         js::respond(&respond, &json!({"ok":false,"error":message}));
     }
+    wake_provider_status();
     if retry {
         let state = state.clone();
         js::schedule(delay, move || {
@@ -986,6 +992,24 @@ fn stop_native(state: &Rc<RefCell<BgState>>, message: &str, retry: bool) {
             }
         });
     }
+}
+
+// Message-driven reconciliation also reaches background tabs whose timers
+// Chrome throttles. Querying tabs recovers after a service-worker restart too.
+fn wake_provider_status() {
+    spawn_local(async {
+        let Ok(promise) = js::query_tabs(&js::to_js(&json!({}))) else { return; };
+        let Ok(tabs) = wasm_bindgen_futures::JsFuture::from(promise).await else { return; };
+        if let Some(tabs) = js::from_js::<Vec<Value>>(tabs) {
+            for tab in tabs {
+                if Provider::from_url(tab["url"].as_str().unwrap_or_default()).is_some() {
+                    if let Some(id) = tab["id"].as_i64() {
+                        js::send_to_tab(id as i32, &json!({"type":"bridge_status_changed"}));
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
@@ -1047,6 +1071,7 @@ fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
             if let Err(err) = send_native(&state, json!({"type":"status"})) {
                 state.borrow_mut().error(err);
             }
+            wake_provider_status();
         }
         "session_registered" => {
             let session: Option<SessionView> = value

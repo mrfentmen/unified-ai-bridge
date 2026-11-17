@@ -218,6 +218,10 @@ impl App {
             let _ = self.home.save_config(&self.config);
             return Err(err);
         }
+        // A switch never carries automatic approval into another workspace.
+        if let Err(err) = crate::yolo::stop(self, "workspace switched") {
+            eprintln!("YOLO stopped; audit failed: {err}");
+        }
         // The switch is already committed and audited. An optional feed error
         // must not leave the running host on its previous App/root snapshot.
         match self.store.record_activity(
@@ -432,6 +436,11 @@ impl App {
         path: Option<String>,
     ) -> Result<(), ToolFailure> {
         crate::tasks::checkpoint(self)?;
+        if let Some(path) = path.as_ref() {
+            if crate::yolo::approve(self, session_id, agent, tool, std::slice::from_ref(path), false)? {
+                return Ok(());
+            }
+        }
         if !self.interactive {
             self.audit_denial(
                 agent,
@@ -570,6 +579,9 @@ impl App {
         access: Access,
         path: &crate::sandbox::ResolvedPath,
     ) -> crate::sandbox::Decision {
+        if let Err(err) = crate::yolo::checkpoint(self) {
+            return crate::sandbox::Decision::Deny(err.to_string());
+        }
         let original = self.sandbox().decide(agent, access, path);
         if matches!(original, crate::sandbox::Decision::Deny(_)) {
             return original;

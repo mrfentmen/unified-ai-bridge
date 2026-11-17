@@ -1,6 +1,32 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest live Chrome/provider checks use extension/native host **0.5.21**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below distinguish successful file operations from unattended recovery. The restart test failed; this is not an all-green release acceptance.
+These are recorded results, not a guarantee of every environment. The latest installed build is **0.5.22**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The YOLO and hidden-tab session-recovery checks below passed. Website context/quota limits and the remaining acceptance rows are still open.
+
+## YOLO and session recovery 0.5.22 — November 17, 2026
+
+Source, generated manifest, Chrome extension card, ChatGPT panel and native handshake matched **0.5.22 / protocol 6**. Testing used the CLI Playwright MCP extension connection, with macOS accessibility for the extension's protected controls. The active general workspace remained `/Users/test/bridge-acceptance-0521`; the archaeology project was untouched. YOLO is **off** at the end.
+
+| Check | Observed result |
+|---|---|
+| Build/install | Pinned rustup WASM/native/tooling release builds succeeded; version and native-manifest/hash assertions passed |
+| Automated suite | **230 passed, 0 failed, 1 ignored**. The previously verified long command test was not rerun. After adding the final batch-approval task-state check, **25 targeted native messaging, task and YOLO tests passed** |
+| YOLO policy | Eight dedicated tests cover real writes/patches, audit, expiry, Stop/replacement, two concurrent workers competing for one approval, workspace/restart isolation, narrowed session grants, changed hashes, private/traversal/symlink/research denials, command allowlist and strict control decoding |
+| Framed host | A real host process accepted the panel control, wrote a file in Strict mode, returned the cached result on repetition, and returned that same receipt after restart with YOLO off |
+| Live enable | Real extension controls set **one hour / two approvals**; the provider panel displayed `YOLO ON` and time remaining |
+| ChatGPT | `preview_patch` → `apply_patch` → `read_file` created `files/yolo-0522.rs` without an approval click. Actual result blocks and exact read-back appeared in the conversation. Audit sequence **815** is `approval.yolo:apply_patch` |
+| Stop / denial | Stop appeared in the host log at **05:51:10.592Z**. A new patch through the extension's direct runner showed a normal approval; clicking Deny created no `files/yolo-0522-panel-denied.rs`. Its receipt and audit record show the denial |
+| Hidden-tab recovery | With no active tool request/job and **all ten test tabs hidden**, terminating the idle host at **05:56:27.132Z** produced a new hello at **05:56:27.222Z** and ten fresh registrations by **05:56:27.311Z**. No reload/focus was used. All panel IDs changed and native state returned to connected; YOLO was off |
+| No replay | Across that restart, the **256 stored response receipts** (254 complete, 2 rejected) and **52 file-change records** were identical. These are installation-wide historical counts, not 256 new passes. The Rust proof hash was unchanged and the queued preview result survived |
+| Final native amendment | Final review added the task Pause/Stop check to automatic batch approvals. The final native binary was rebuilt and installed; the WASM hash stayed identical to the loaded artifact. Restart at **06:02:08.530Z** loaded it, followed by ten registrations by **06:02:08.652Z**. The direct extension runner then created `files/yolo-0522-final.txt` through another audited automatic patch, and Stop was applied again. That direct runner used a Grok session's permissions; it is **not** evidence of a new Grok website round trip |
+| Installed diagnostics | **41 self-tests passed** in temporary folders; final doctor passed config, manifest, binary, SQLite and matching DB/file audit chains |
+
+The ChatGPT file contains exactly `pub fn bridge_yolo_proof() -> u32 { 522 }` plus newline: **42 bytes**, SHA256 `0d59d1b252640c733cfeba0dbf0a16152834d4904c7c12ebc94ec0ae4efb40ba`. Native SHA256 `2d9d086b0f736248f728f0943b4212e27b2095722759348094a2aa696b040533`; WASM SHA256 `bca4a9e163331267b4b0a424b5b4f48054e19ebc4f03b11cd1ee42dbdb2da326`.
+
+The follow-up ChatGPT denial task hit **Context window full** after preview. Its result stayed in the composer; `apply_patch` was never emitted and `files/yolo-0522-denied.rs` is absent. The panel reported the generic “website did not accept the message” error, then showed the queued result after session recovery. This is a remaining delivery/diagnostics defect, not a successful in-conversation denial test. The direct runner was used for the separate real Stop/deny check. Host recovery establishes registration and preservation of pending state, not automatic recovery from a website context limit.
+
+During development, a dedicated test initially expected `conflict`; the actual correct public denial code is `file_changed`. The test assertion was corrected without weakening the refusal. An early workspace run encountered a stale lockfile after the version edit; refreshing version metadata and rerunning produced the 230-test result above. A stale standalone tooling executable pointed at an old temporary checkout; that build was stopped before install, and the supported `cargo bridge-deploy` command rebuilt tooling from the current checkout. These early runs are not passing acceptance evidence.
+
+Raw UI readings, transcripts, hashes, native logs and build/test results remain private in ignored `docs/evidence/0.5.22/`. No all-provider tool matrix was rerun on this version. Grok quotas, Gemini setup drafts, Qwen candidate/foreground behavior, full concurrency, docked-panel/popup lifecycle, other tool UI tests, stable signing and a physical older Intel Mac remain open. See [YOLO scope](OVERNIGHT.md#yolo-mode-0522) and [remaining tasks](TASKS.md).
 
 ## Live 0.5.21 acceptance — November 16–17, 2026
 

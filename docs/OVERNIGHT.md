@@ -22,7 +22,21 @@ The packaged host restart/write/approval checks passed; live browser acceptance 
 
 Open the extension popup or side panel and expand **Readiness check**. Confirm that the panel, background worker and host versions match, the workspace is correct and unlocked, and the relevant commands are granted. **Check host and workspace** reads actual disk space, workspace policy and audit status. macOS file, Accessibility and screen-recording grants remain “unknown until exercised”; configuration alone cannot prove access. A registered browser session also does not prove that its composer is usable or that the account has quota.
 
-## File-write grants
+## YOLO mode (0.5.22)
+
+Open the popup or side panel, find **YOLO**, choose 1, 4, 8 or 12 hours and an automatic-approval cap, then click **Enable YOLO for this workspace**. The default selection is eight hours and 200 approvals; mode starts **off**. It covers all registered chats in the displayed workspace, including newly registered sessions. The in-page panel shows when it is on. No model tool can enable or extend it.
+
+YOLO automatically approves text/code writes and edits, appends, copies, folder creation, write-only `apply_patch` batches, PDF report creation, spreadsheet copies, image/WAV transforms, PDF page previews and ZIP creation. Existing tool size limits, expected hashes, checkpoints, private-file exclusions, research protections and workspace locks still apply. A narrower session write grant takes precedence: YOLO does not expand its tools, directory or budgets. New file formats and arbitrary executables do not become supported just because mode is on.
+
+Deletes, restores, binary replacement, artifact imports, archive extraction, network access, Git commits, MCP integrations and desktop control keep their own policies. Commands keep their explicit executable/argument allowlist and separate **Always allow** option; Strict mode still prompts for commands. YOLO cannot click macOS permission dialogs, bypass a website's login or quota, or keep the Mac awake.
+
+**Stop YOLO** revokes automatic approvals and restores normal policy. It does not stop the AI, undo saved files or cancel command jobs. A call already inside a synchronous file commit may finish; later policy checkpoints reject an expired or revoked YOLO approval. Use the separate task/job Stop controls to stop their admission or execution. Existing manual approval prompts remain manual; enabling YOLO does not accept a prompt that was already waiting.
+
+Time expiry or exhausting the approval cap restores normal prompts. The cap counts approvals replaced by YOLO, not every read/write: operations already permitted by normal policy do not consume it, and a multi-file patch uses one approval. Task/response limits remain separate. Failed attempts consume their automatic approval. Every automatic decision, enable and explicit Stop is audited. Expiry is derived from the recorded deadline, checked with both elapsed and wall-clock time.
+
+Host restart, workspace switch and workspace policy changes turn YOLO off. It is not a permanent config grant and does not survive an update. Re-enable it from the panel after reviewing the current root. Pending/uncertain mutations are never replayed to make unattended work appear complete.
+
+## Narrow session file-write grants
 
 In **Scoped file-write grants**, choose a registered session, an existing directory, the allowed operations, duration, and call/byte/path budgets. Available operations are write, edit, append, copy, and create-folder. The grant belongs to that session and workspace; a new session after reconnect requires its own grant.
 

@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.21 live-tested** — Six providers passed the file/approval loop; Grok remains partly blocked by website quotas. A host-restart test found that tabs need reloading to restore their sessions, so unattended recovery is not ready. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.22** — Opt-in YOLO mode reduces repeated local-write approvals. ChatGPT created and read back a Rust file without an approval click; ten hidden tabs recovered their sessions after a host restart without replaying writes. Provider quota/context limits and broader unattended workflows still need work. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -36,6 +36,7 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.
 - **Connect reviewed native MCP tools.** Register a local native executable, discover its tools, and explicitly grant access. Each call requires approval. The 0.5.14 candidate adds readiness checks and stops active process groups when grants are removed or the workspace locks. [Integration limits](docs/INTEGRATIONS.md).
 - **Run bounded background work.** Approved commands can keep running through a browser reconnect. Inspect saved output, stop jobs, and grant a selected session time-limited file writes with budgets. See [overnight controls](docs/OVERNIGHT.md).
+- **Reduce repeated approvals with YOLO.** Opt in for a chosen duration and approval cap in the current workspace. Routine code/file edits and supported output creation run automatically; Stop restores normal prompts. Protected paths and separate command/delete/network policies remain enforced. Off after host restart or workspace/policy changes. [Exact scope](docs/OVERNIGHT.md#yolo-mode-0522).
 - **Pause a chat's local calls (0.5.17 candidate).** Keep task budgets and receipts across host restarts, block new calls, close waiting approvals and save a private task report. Already executing work may finish; background commands have separate Stop controls. Resume does not restart the model or replay an old write. [Task controls and limits](docs/OVERNIGHT.md#chat-task-controls-0517-candidate).
 - **Read public pages and download files (0.5.18 candidate).** Grant selected public origins, then approve an anonymous GET. Return bounded text or save a new file with a verified hash. Network access starts off; private addresses, login cookies, query strings and overwrites are refused. [Network scope and limits](docs/NETWORK.md).
 - **Inspect the desktop.** Capture screenshots to files, list open applications, and inspect accessible windows, subject to macOS permissions. Mouse and keyboard control are still planned.
@@ -84,7 +85,7 @@ The implementation is Rust throughout: **Oxichrome** generates the extension pac
 
 Qwen sometimes hides rendered message text in background tabs. Its session stays connected, but tool execution may wait until you bring the tab into view. All adapters depend on website markup and can need updates when a provider changes its interface.
 
-If the native host restarts on 0.5.21, reload the provider tabs. The host reconnects automatically, but existing panels can retain stale session IDs. This is a known failed recovery check, not an account or filesystem-permission issue.
+The stale-session recovery bug found on 0.5.21 is fixed in 0.5.22: ten hidden verification tabs registered again after a host restart, with no repeated writes. This does not resolve website setup drafts, context limits or account quotas. YOLO turns off after restart; ordinary tool and command permissions still apply.
 
 ## Run it locally
 

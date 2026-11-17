@@ -276,6 +276,36 @@ fn binary() -> PathBuf {
 }
 
 #[test]
+fn yolo_controls_cross_native_framing_and_restart_never_replays_a_write() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let root = temp.path().join("workspace");
+    let binary = binary();
+    setup_workspace(&binary,&home,&root);
+    let mut host = HostProcess::start(&binary,&home,&[]);
+    let session=host.register();
+    host.send(&json!({"type":"set_workspace_policy","request_key":"strict","read_only":false,"permission_mode":"strict"}));
+    host.receive_until("workspace_changed");
+    host.send(&json!({"type":"yolo_control","request_key":"enable","workspace_id":host.workspace_id,"action":{"operation":"enable","seconds":60,"max_approvals":5}}));
+    assert_eq!(host.receive_until("control_result")["result"]["yolo"]["active"],true);
+    let args=json!({"path":"AGENTS/CHATGPT/notes/yolo.md","content":"Framed YOLO fixture\n","create_only":true});
+    let result=host.tool(&session,"yolo-write",0,"write_document",args.clone());
+    assert_eq!(result["status"],"ok","{result}");
+    let first=std::fs::read(root.join("AGENTS/CHATGPT/notes/yolo.md")).unwrap();
+    assert_eq!(first,b"Framed YOLO fixture\n");
+    assert_eq!(host.tool(&session,"yolo-write",0,"write_document",args.clone()),result);
+    host.send(&json!({"type":"status"}));
+    assert_eq!(host.receive_until("status_reply")["yolo"]["used_approvals"],1);
+    drop(host);
+    let mut host=HostProcess::start(&binary,&home,&[]);
+    let session=host.register();
+    host.send(&json!({"type":"status"}));
+    assert_eq!(host.receive_until("status_reply")["yolo"]["active"],false);
+    assert_eq!(host.tool(&session,"yolo-write",0,"write_document",args),result);
+    assert_eq!(std::fs::read(root.join("AGENTS/CHATGPT/notes/yolo.md")).unwrap(),first);
+}
+
+#[test]
 fn chat_task_controls_persist_across_real_host_restart_without_replaying_writes() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");

@@ -142,9 +142,12 @@ pub(crate) async fn review_batch(
     entries: Vec<ReviewEntry>,
     reason: &str,
 ) -> Result<BatchReview, ToolFailure> {
-    ctx.app
-        .request_approval(ctx.session_id, ctx.agent, tool, reason, None)
-        .await?;
+    let paths: Vec<_> = entries.iter().map(|e|e.path.clone()).collect();
+    let automatic = entries.iter().all(|e|e.after.is_some())
+        && crate::yolo::approve(ctx.app,ctx.session_id,ctx.agent,tool,&paths,true)?;
+    if !automatic {
+        ctx.app.request_approval(ctx.session_id, ctx.agent, tool, reason, None).await?;
+    }
     Ok(BatchReview {
         workspace: ctx.app.workspace.id(),
         session: ctx.session_id.into(),
