@@ -62,6 +62,7 @@ pub fn control(app: &Arc<App>, workspace: &str, action: Control) -> Result<(Arc<
         let next = Arc::new(App {
             home: app.home.clone(), config, workspace: app.workspace.clone(),
             store: app.store.clone(), approvals: app.approvals.clone(),
+            browser_files: app.browser_files.clone(),
             events: app.events.clone(), interactive: app.interactive,
         });
         next.audit_workspace("task.budgets_applied", json!({"workspace_id":workspace,"limits":current(&next)}))?;

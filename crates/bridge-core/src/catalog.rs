@@ -101,6 +101,12 @@ pub const TOOLS: &[ToolSpec] = &[
         description: "List browser downloads explicitly shared with this session and workspace. Returns metadata only; never browses Downloads or discovers website files automatically.",
         arguments: "(none)", schema: r#"{"type":"object","properties":{},"additionalProperties":false}"#, writes: false,
     },
+    ToolSpec { name:"list_generated_files",category:Category::Development,
+        description:"Discover bounded rendered assistant file controls in this conversation. Returns short-lived opaque handles, never URLs or Downloads contents. ChatGPT file cards and explicit download links only; other controls need manual download. Requires a browser session.",
+        arguments:"(none)",schema:r#"{"type":"object","properties":{},"additionalProperties":false}"#,writes:false },
+    ToolSpec { name:"request_download",category:Category::Development,
+        description:"Request approval to download a discovered generated file once. Explicit supported links share the exact Chrome download; website buttons require manual selection/sharing in Browser files. Does not import, open or execute files. Never retry uncertain outcomes.",
+        arguments:"handle",schema:r#"{"type":"object","properties":{"handle":{"type":"string","pattern":"^[a-fA-F0-9]{32}$"}},"required":["handle"],"additionalProperties":false}"#,writes:true },
     ToolSpec {
         name: "import_artifact", category: Category::Filesystem,
         description: "Copy one explicitly shared browser download (up to 64 MiB) to a new file in an existing workspace directory. Always requires approval. Verifies SHA256, preserves original, refuses overwrites. No extraction or execution; binary recovery is not supported.",

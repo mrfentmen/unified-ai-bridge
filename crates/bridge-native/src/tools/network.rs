@@ -116,6 +116,7 @@ pub fn control(app: &Arc<App>, workspace: &str, action: Control) -> Result<(Arc<
             workspace: app.workspace.clone(),
             store: app.store.clone(),
             approvals: app.approvals.clone(),
+            browser_files: app.browser_files.clone(),
             events: app.events.clone(),
             interactive: app.interactive,
         });

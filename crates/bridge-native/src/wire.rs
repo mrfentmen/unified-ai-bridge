@@ -9,6 +9,11 @@ use bridge_core::workspace::{PermissionMode, Profile, WorkspaceInfo};
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtToHost {
+    BrowserOperationReply {
+        id: String,
+        scope: bridge_core::browser_files::Scope,
+        result: Result<Value, String>,
+    },
     Hello {
         protocol: u32,
         extension_version: String,
@@ -258,6 +263,7 @@ pub enum HostToExt {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BridgeEvent {
+    BrowserOperation { id: String, scope: bridge_core::browser_files::Scope, action: bridge_core::browser_files::Action, expires_at_ms: i64, execute_before_ms: i64 },
     Activity { activity: ActivityRecord },
     ApprovalRequired { approval: ApprovalRequest },
     ApprovalResolved { approval_id: String, allowed: bool },

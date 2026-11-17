@@ -197,6 +197,12 @@ fn snapshot(app: &App, task: &Task) -> Result<Value> {
 
 tokio::task_local! { static EXECUTION: (String, u64); }
 
+pub fn original_task_id(app: &App) -> Result<Option<String>, ToolFailure> {
+    let Ok((id, _)) = EXECUTION.try_with(Clone::clone) else { return Ok(None); };
+    app.store.task(&id).map_err(|e|ToolFailure::Internal(e.to_string()))?
+        .map(|task|Some(task.task_id)).ok_or_else(||ToolFailure::Internal("Missing browser task.".into()))
+}
+
 /// Install only around a browser task's dispatch. Panel tools/MCP remain separate.
 pub async fn execute(
     app: &App,

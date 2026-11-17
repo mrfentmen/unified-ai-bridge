@@ -407,6 +407,8 @@ fn ArtifactControls(
 ) -> impl IntoView {
     let session = RwSignal::new(String::new());
     let download = RwSignal::new(String::new());
+    let generated = RwSignal::new(Vec::<serde_json::Value>::new());
+    let generated_handle = RwSignal::new(String::new());
     let downloads = RwSignal::new(Vec::<serde_json::Value>::new());
     let shared = RwSignal::new(Vec::<serde_json::Value>::new());
     let selected = RwSignal::new(String::new());
@@ -415,10 +417,17 @@ fn ArtifactControls(
     let busy = RwSignal::new(false);
     let displayed_scope = RwSignal::new(String::new());
     Effect::new(move |_| {
-        let scope = format!("{}:{}", status.get().active_id, session.get());
+        let current = status.get();
+        let selected_session = session.get();
+        if !selected_session.is_empty() && !current.sessions.iter().any(|s|s.id==selected_session && s.conversation.as_ref().is_some_and(|c|!c.is_empty())) {
+            session.set(String::new());
+        }
+        let scope = format!("{}:{}", current.active_id, session.get());
         if scope != displayed_scope.get_untracked() {
             displayed_scope.set(scope);
             shared.set(Vec::new());
+            generated.set(Vec::new());
+            generated_handle.set(String::new());
             selected.set(String::new());
             path.set(String::new());
             result.set(serde_json::Value::Null);
@@ -447,7 +456,7 @@ fn ArtifactControls(
                 json!({"op":op,"artifact_id":selected.get_untracked(),"workspace_id":workspace,"session_id":sid})
             }
             _ => {
-                json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":op,"arguments":if op=="import_artifact"{json!({"artifact_id":selected.get_untracked(),"path":path.get_untracked()})}else{json!({})}})
+                json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":op,"arguments":if op=="import_artifact"{json!({"artifact_id":selected.get_untracked(),"path":path.get_untracked()})}else if op=="request_download"{json!({"handle":generated_handle.get_untracked()})}else{json!({})}})
             }
         };
         busy.set(true);
@@ -472,6 +481,11 @@ fn ArtifactControls(
                         if op == "share_download" {
                             selected.set(value["artifact_id"].as_str().unwrap_or_default().into());
                         }
+                        if op == "list_generated_files" && value["status"]=="ok" {
+                            generated.set(value["data"]["files"].as_array().cloned().unwrap_or_default());
+                            generated_handle.set(String::new());
+                        }
+                        if op == "request_download" { generated_handle.set(String::new()); }
                         result.set(value);
                         match workspace_request(json!({"op":"run_tool","workspace_id":workspace,"session_id":sid,"tool":"list_artifacts","arguments":{}})).await {
                             Ok(list) if status.get_untracked().active_id==workspace && session.get_untracked()==sid=>{
@@ -492,18 +506,25 @@ fn ArtifactControls(
         <details style="border:1px solid #304451;padding:8px;margin-bottom:10px">
             <summary>"Browser files → workspace"</summary>
             <div style="display:grid;gap:6px;margin-top:8px">
-                <div>"Download from the chat first, then select the file here. Only your selected file is shared. Images, PDFs, office files, ZIPs and media keep their original bytes."</div>
+                <div>"Discover rendered generated files in a connected chat, then request its download. Website buttons need explicit selection below; supported direct links share the exact Chrome download. Images, PDFs, office files, ZIPs and media keep their original bytes."</div>
                 <div style="color:#8ea2b1">"Up to 64 MiB · completed safe downloads only · approval for every import · no overwrites, extraction or binary undo."</div>
                 <button style=CONTROL_STYLE disabled=move||busy.get() on:click=move |_|action("browser_downloads")>"Refresh browser downloads"</button>
                 <select aria-label="Browser download" style=CONTROL_STYLE prop:value=move||download.get() on:change=move|ev|download.set(event_target_value(&ev))>
-                    <option value="">"Choose a downloaded file…"</option>
-                    {move||downloads.get().into_iter().map(|d|view!{<option value=d["download_id"].to_string()>{format!("{} · {} bytes · {}",d["name"].as_str().unwrap_or("file"),d["bytes"],d["origin"].as_str().unwrap_or_default())}</option>}).collect_view()}
+                    <option value="" prop:selected=move||download.get().is_empty()>"Choose a downloaded file…"</option>
+                    {move||downloads.get().into_iter().map(|d|{let id=d["download_id"].to_string();let selected_id=id.clone();view!{<option value=id prop:selected=move||download.get()==selected_id>{format!("{} · {} bytes · {}",d["name"].as_str().unwrap_or("file"),d["bytes"],d["origin"].as_str().unwrap_or_default())}</option>}}).collect_view()}
                 </select>
                 <select aria-label="File sharing session" style=CONTROL_STYLE prop:value=move||session.get() on:change=move|ev|session.set(event_target_value(&ev))>
-                    <option value="">"Choose a conversation…"</option>
-                    {move||status.get().sessions.into_iter().map(|s|view!{<option value=s.id>{format!("{} · tab {} · {}",s.agent,s.tab_id,s.conversation.unwrap_or_default())}</option>}).collect_view()}
+                    <option value="" prop:selected=move||session.get().is_empty()>"Choose a conversation…"</option>
+                    {move||status.get().sessions.into_iter().filter(|s|s.conversation.as_ref().is_some_and(|c|!c.is_empty())).map(|s|{let selected_id=s.id.clone();view!{<option value=s.id prop:selected=move||session.get()==selected_id>{format!("{} · tab {} · {}",s.agent,s.tab_id,s.conversation.unwrap_or_default())}</option>}}).collect_view()}
                 </select>
                 <button style=CONTROL_STYLE disabled=move||busy.get()||download.get().is_empty()||session.get().is_empty() on:click=move |_|action("share_download")>"Share selected file with this session"</button>
+                <button style=CONTROL_STYLE disabled=move||busy.get()||session.get().is_empty() on:click=move |_|action("list_generated_files")>"Discover generated files in conversation"</button>
+                <select aria-label="Generated chat file" style=CONTROL_STYLE prop:value=move||generated_handle.get() on:change=move|ev|generated_handle.set(event_target_value(&ev))>
+                    <option value="" prop:selected=move||generated_handle.get().is_empty()>"Choose a generated file…"</option>
+                    {move||generated.get().into_iter().map(|f|{let id=f["handle"].as_str().unwrap_or_default().to_string();let selected_id=id.clone();view!{<option value=id prop:selected=move||generated_handle.get()==selected_id>{format!("{} · {}",f["name"].as_str().unwrap_or("file"),f["method"].as_str().unwrap_or_default())}</option>}}).collect_view()}
+                </select>
+                <button style=CONTROL_STYLE disabled=move||busy.get()||generated_handle.get().is_empty() on:click=move |_|action("request_download")>"Request generated-file download"</button>
+                <div style="color:#8ea2b1">"ChatGPT file cards and explicit download links only. Discovery is limited to rendered recent replies. Handles expire in five minutes. Each file is attempted once; inspect downloads after an interruption."</div>
                 <div>"Sharing lasts 24 hours. The model can find the file with list_artifacts; sharing does not send a chat message."</div>
                 <button style=CONTROL_STYLE disabled=move||busy.get()||session.get().is_empty() on:click=move |_|action("list_artifacts")>"Refresh shared files"</button>
                 <select aria-label="Shared file" style=CONTROL_STYLE prop:value=move||selected.get() on:change=move|ev|selected.set(event_target_value(&ev))>

@@ -455,6 +455,7 @@ pub fn save(app: &std::sync::Arc<App>, mut server: ServerConfig) -> Result<std::
         workspace: app.workspace.clone(),
         store: app.store.clone(),
         approvals: app.approvals.clone(),
+        browser_files: app.browser_files.clone(),
         events: app.events.clone(),
         interactive: app.interactive,
     }))
@@ -477,6 +478,7 @@ pub fn remove(app: &std::sync::Arc<App>, id: &str) -> Result<std::sync::Arc<App>
         workspace: app.workspace.clone(),
         store: app.store.clone(),
         approvals: app.approvals.clone(),
+        browser_files: app.browser_files.clone(),
         events: app.events.clone(),
         interactive: app.interactive,
     }))

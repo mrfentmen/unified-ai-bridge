@@ -4,6 +4,7 @@
 //! the same validation code runs in both places.
 
 pub mod catalog;
+pub mod browser_files;
 pub mod error;
 pub mod execution;
 pub mod instructions;
@@ -15,7 +16,7 @@ pub mod workspace;
 pub use error::CoreError;
 
 /// Wire protocol revision. The extension and host both send this in `hello`.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// Chrome native messaging host name.
 pub const NATIVE_HOST_NAME: &str = "com.unified_ai_bridge.host";

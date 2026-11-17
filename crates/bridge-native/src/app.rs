@@ -23,6 +23,7 @@ pub struct App {
     pub workspace: Workspace,
     pub store: Arc<Store>,
     pub approvals: Arc<ApprovalManager>,
+    pub browser_files: Arc<crate::browser_files::Broker>,
     pub events: broadcast::Sender<BridgeEvent>,
     /// True only when a browser extension can answer approval prompts. MCP and
     /// headless runs fail closed for protected operations.
@@ -80,6 +81,7 @@ impl App {
             workspace,
             store: Arc::new(store),
             approvals: Arc::new(ApprovalManager::default()),
+            browser_files: Arc::default(),
             events,
             interactive,
         }))
@@ -98,6 +100,7 @@ impl App {
             workspace,
             store: self.store.clone(),
             approvals: self.approvals.clone(),
+            browser_files: self.browser_files.clone(),
             events: self.events.clone(),
             interactive: self.interactive,
         })
@@ -149,6 +152,7 @@ impl App {
             workspace: self.workspace.clone(),
             store: self.store.clone(),
             approvals: self.approvals.clone(),
+            browser_files: self.browser_files.clone(),
             events: self.events.clone(),
             interactive: self.interactive,
         }))
@@ -176,6 +180,7 @@ impl App {
             workspace: self.workspace.clone(),
             store: self.store.clone(),
             approvals: self.approvals.clone(),
+            browser_files: self.browser_files.clone(),
             events: self.events.clone(),
             interactive: self.interactive,
         }))

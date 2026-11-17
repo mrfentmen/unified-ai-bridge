@@ -1061,6 +1061,55 @@ fn wake_provider_status() {
     });
 }
 
+async fn browser_operation(state: Rc<RefCell<BgState>>, event: Value) {
+    use bridge_core::browser_files::{Action, Scope};
+    let Ok(scope) = serde_json::from_value::<Scope>(event["scope"].clone()) else {return};
+    let Ok(action) = serde_json::from_value::<Action>(event["action"].clone()) else {return};
+    let epoch = state.borrow().connection_epoch;
+    let valid = || {
+        let s = state.borrow();
+        s.ready && s.connection_epoch==epoch && s.details["active_id"]==scope.workspace_id
+            && event["expires_at_ms"].as_f64().unwrap_or(0.0)>js::now_ms()
+            && s.sessions.iter().any(|session|session.id==scope.session_id && session.workspace_id==scope.workspace_id
+                && session.tab_id==scope.tab_id && session.provider==scope.provider && session.conversation.as_deref()==Some(&scope.conversation))
+    };
+    let outcome: Result<Value,String> = async {
+        if !valid() {return Err("Browser operation session, workspace or connection changed.".into());}
+        let tab_id = i32::try_from(scope.tab_id).map_err(|_|"Invalid browser tab.")?;
+        // Verify the actual tab URL immediately before targeting it, not a
+        // cached registration that may precede an SPA route change.
+        let tabs = js::query_tabs(&js::to_js(&json!({}))).map_err(|_|"Cannot inspect browser tabs.")?;
+        let tabs: Vec<Value> = js::from_js(wasm_bindgen_futures::JsFuture::from(tabs).await.map_err(|_|"Cannot inspect browser tabs.")?).ok_or("Invalid browser tab list.")?;
+        let provider = Provider::from_slug(&scope.provider).ok_or("Unknown browser provider.")?;
+        if !tabs.iter().any(|t|t["id"].as_i64()==Some(scope.tab_id) && t["url"].as_str().is_some_and(|url|provider.allowed(url) && provider.conversation_id(url).as_deref()==Some(&scope.conversation))) {
+            return Err("The browser tab navigated away from the approved conversation.".into());
+        }
+        if !valid() || event["execute_before_ms"].as_f64().unwrap_or(0.0)<=js::now_ms() {return Err("Browser operation expired or workspace changed.".into());}
+        let promise = js::tabs_send_message_raw(tab_id,&js::to_js(&json!({"type":"browser_operation","scope":scope,"action":action,"expires_at_ms":event["execute_before_ms"]})))
+            .map_err(|_|"Cannot reach this conversation. Reload its tab after reloading the extension.")?;
+        let raw = wasm_bindgen_futures::JsFuture::from(promise).await.map_err(|_|"Conversation disconnected. Inspect downloads; no automatic retry.")?;
+        let reply = js::from_js::<Result<Value,String>>(raw).ok_or("Invalid conversation file response.")??;
+        if !valid() {return Err("Browser operation expired or workspace changed; inspect downloads before retrying.".into());}
+        if let Action::Download{file} = &action {
+            if reply["state"]=="direct_link" && file.method==bridge_core::browser_files::DownloadMethod::DirectLink {
+                if event["execute_before_ms"].as_f64().unwrap_or(0.0)<=js::now_ms() {return Err("Download authorization expired. No link download started.".into());}
+                let url = reply["url"].as_str().ok_or("Missing rendered file link.")?;
+                let download = crate::artifacts::download_link(provider,url).await?;
+                if !valid() {return Err("Download completed but its session changed. Share it manually from Browser files.".into());}
+                return Ok(json!({"state":"shared","download":download}));
+            }
+            if reply["state"]!="manual_share_required" {return Err("Unsupported website file result.".into());}
+        }
+        Ok(reply)
+    }.await;
+    // Never queue a reply for a new native connection: its pending broker no
+    // longer owns the request, and the old mutation must remain uncertain.
+    let s = state.borrow();
+    if s.ready && s.connection_epoch==epoch {
+        if let Some(port) = &s.port {let _ = js::port_post(port,&json!({"type":"browser_operation_reply","id":event["id"],"scope":scope,"result":outcome}));}
+    }
+}
+
 fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
     let Some(value) = js::from_js::<Value>(message) else {
         state
@@ -1253,6 +1302,11 @@ fn handle_native_message(state: Rc<RefCell<BgState>>, message: JsValue) {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
             {
+                "browser_operation" => {
+                    let event = event.clone();
+                    let browser_state = state.clone();
+                    spawn_local(async move { browser_operation(browser_state,event).await; });
+                }
                 "approval_resolved" => {
                     if let Some(id) = event["approval_id"].as_str() {
                         state.borrow_mut().approvals.retain(|a|a.id!=id);

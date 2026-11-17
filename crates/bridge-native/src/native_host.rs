@@ -168,6 +168,11 @@ pub async fn run() -> Result<()> {
             continue;
         }
         match message {
+            ExtToHost::BrowserOperationReply {id, scope, result} => {
+                if !app.browser_files.resolve(&id, &scope, result) {
+                    log.write("warn", "ignored stale or mismatched browser operation reply");
+                }
+            }
             ExtToHost::Hello {
                 protocol,
                 extension_version,
@@ -454,7 +459,7 @@ pub async fn run() -> Result<()> {
                             };
                             let result = match tokio::time::timeout(
                                 std::time::Duration::from_secs(app.config.tool_timeout_secs),
-                                execution,
+                                crate::browser_files::deadline(app.config.tool_timeout_secs, execution),
                             )
                             .await
                             {
@@ -1114,7 +1119,7 @@ pub async fn run() -> Result<()> {
                     };
                     let result = tokio::time::timeout(
                         std::time::Duration::from_secs(app.config.tool_timeout_secs),
-                        execution,
+                        crate::browser_files::deadline(app.config.tool_timeout_secs, execution),
                     )
                     .await
                     .unwrap_or_else(|_| {

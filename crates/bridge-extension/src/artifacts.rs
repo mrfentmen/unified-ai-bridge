@@ -24,7 +24,42 @@ struct Download {
     incognito: bool,
     file_size: i64,
     #[serde(default)]
+    total_bytes: i64,
+    #[serde(default)]
     end_time: String,
+}
+
+/// Only rendered download links on provider/file origins are actionable. No
+/// model URL, arbitrary network destination, data URI or local-file access.
+pub fn allowed_file_url(provider: bridge_core::provider::Provider, raw: &str) -> bool {
+    let Ok(url) = url::Url::parse(raw.strip_prefix("blob:").unwrap_or(raw)) else {return false};
+    url.scheme()=="https" && url.username().is_empty() && url.password().is_none()
+        && url.port().is_none() && (provider.allowed(url.as_str())
+            || (provider==bridge_core::provider::Provider::ChatGpt && url.host_str()==Some("files.oaiusercontent.com")))
+}
+
+/// Chrome returns the ID of OUR request. Never correlate a website button by
+/// filename, timestamp, origin or the user's latest unrelated download.
+pub async fn download_link(provider: bridge_core::provider::Provider, url: &str) -> Result<Value,String> {
+    if !allowed_file_url(provider,url) {return Err("Unsupported generated-file link; use the website download control and share the selected file.".into());}
+    let promise = js::downloads_download(&js::to_js(&json!({"url":url,"saveAs":false,"conflictAction":"uniquify"})))
+        .map_err(|_|"Chrome could not start this generated-file download. Inspect downloads; do not retry automatically.")?;
+    let id = JsFuture::from(promise).await.map_err(|_|"Chrome rejected the generated-file download. Inspect downloads before retrying.")?
+        .as_f64().filter(|n|*n>=0.0 && *n<=i32::MAX as f64 && n.fract()==0.0).ok_or("Chrome returned no download ID.")? as i32;
+    for _ in 0..40 {
+        let item = search(json!({"id":id,"limit":1})).await?.into_iter().find(|d|d.id==id).ok_or("Download disappeared; inspect Chrome downloads.")?;
+        if item.total_bytes>MAX_BYTES || item.file_size>MAX_BYTES {
+            if let Ok(p) = js::downloads_cancel(id) {let _ = JsFuture::from(p).await;}
+            return Err("Generated file exceeds 64 MiB. Cancellation requested; any partial download remains in Chrome. Nothing shared.".into());
+        }
+        if item.state=="complete" {return selected(id).await;}
+        if item.state=="interrupted" || item.incognito || item.danger!="safe" {
+            return Err("Download interrupted, private or flagged by Chrome. Nothing shared; inspect Chrome downloads.".into());
+        }
+        let pause = js_sys::Promise::new(&mut |resolve,_| {js::schedule(1_000,move||{let _ = resolve.call0(&wasm_bindgen::JsValue::NULL);});});
+        let _ = JsFuture::from(pause).await;
+    }
+    Err("Download still pending after 40 seconds. Inspect Chrome downloads and share it manually when complete. It will not be retried.".into())
 }
 
 impl Download {
@@ -115,5 +150,17 @@ mod tests {
             };
             assert!(!d.eligible(), "{field}");
         }
+    }
+    #[test]
+    fn download_links_cannot_escape_the_supported_provider_origins() {
+        use bridge_core::provider::Provider::*;
+        for raw in ["https://chatgpt.com/file","blob:https://chatgpt.com/id","https://files.oaiusercontent.com/file?token=private"] {
+            assert!(allowed_file_url(ChatGpt,raw));
+        }
+        for raw in ["file:///etc/passwd","javascript:alert(1)","data:image/svg+xml,abc","http://chatgpt.com/file","https://user:secret@chatgpt.com/file","https://chatgpt.com.evil.test/file","https://127.0.0.1/file","https://chatgpt.com:8000/file","blob:file:///etc/passwd"] {
+            assert!(!allowed_file_url(ChatGpt,raw),"{raw}");
+        }
+        assert!(!allowed_file_url(Claude,"https://files.oaiusercontent.com/file"));
+        assert!(!allowed_file_url(ChatGpt,"https://claude.ai/file"));
     }
 }

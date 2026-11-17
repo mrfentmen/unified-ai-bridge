@@ -247,6 +247,7 @@ impl Store {
             CREATE TABLE IF NOT EXISTS task_handoffs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, record TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, definition TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS bridge_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS browser_downloads (owner TEXT NOT NULL, source_key TEXT NOT NULL, result_json TEXT, PRIMARY KEY(owner,source_key));
             CREATE TABLE IF NOT EXISTS activity_results (activity_id INTEGER PRIMARY KEY REFERENCES activity(id), duration_ms INTEGER NOT NULL, result_json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS file_changes (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_at TEXT NOT NULL, record TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, session_id TEXT NOT NULL, download_id INTEGER NOT NULL, record TEXT NOT NULL, UNIQUE(workspace_id, session_id, download_id));
@@ -1230,6 +1231,28 @@ impl Store {
                 bail!("failed to create request claim");
             }
         })
+    }
+
+    /// Claims persist across session/host/extension restarts. NULL is an
+    /// uncertain outcome, never permission to click or download again.
+    pub fn claim_browser_download(&self, owner: &str, source_key: &str) -> Result<bool> {
+        Ok(self.conn.lock().expect("store mutex").execute(
+            "INSERT OR IGNORE INTO browser_downloads(owner,source_key) VALUES (?1,?2)",
+            params![owner,source_key],
+        )? == 1)
+    }
+    pub fn browser_download_attempted(&self, owner: &str, source_key: &str) -> Result<bool> {
+        Ok(self.conn.lock().expect("store mutex").query_row(
+            "SELECT EXISTS(SELECT 1 FROM browser_downloads WHERE owner=?1 AND source_key=?2)",
+            params![owner,source_key], |row|row.get(0),
+        )?)
+    }
+    pub fn finish_browser_download(&self, owner: &str, source_key: &str, result: &serde_json::Value) -> Result<()> {
+        self.conn.lock().expect("store mutex").execute(
+            "UPDATE browser_downloads SET result_json=?3 WHERE owner=?1 AND source_key=?2",
+            params![owner,source_key,result.to_string()],
+        )?;
+        Ok(())
     }
 
     pub fn complete_request(&self, session_id: &str, key: &str, result_json: &str) -> Result<()> {

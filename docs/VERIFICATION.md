@@ -1,5 +1,34 @@
 # Verification record
 
+## Generated-file controls 0.5.26 — November 17, 2026
+
+Added `list_generated_files` and `request_download` through the normal native dispatch, task budget, approval and audit paths. The model supplies an opaque handle, never a URL, local source path or identity. Handles bind to a session, workspace, conversation, task and rendered assistant file control, with a five-minute lifetime. Durable claims prevent repeat download attempts after rediscovery or host/session restart. Browser requests have bounded lifetimes and exact reply scopes. The existing byte-preserving importer handles the final copy.
+
+**This is a bounded generated-file milestone, not complete unattended file exchange.** ChatGPT's normal file card was tested live. Its Chrome download has an origin-only referrer and no extension-visible tab ID, so the bridge returns `manual_share_required` instead of associating an unrelated same-named download. The direct-link path uses the ID returned by `chrome.downloads.download`; its policy, transport and file-registration paths have automated coverage, but a real provider direct-link round trip remains unverified. Other providers' generated-file controls, uploads and model image delivery remain unverified/unimplemented as applicable.
+
+### Actual browser and disk evidence
+
+The existing **general / standard** scratch workspace was used with **16 calls/task, 4/response, YOLO off and network off**. The loaded Chrome card, panel, manifest and host reported **0.5.26 / protocol 9**. Final bundle hashes:
+
+```text
+native 909d218069bb8c04b03a613f2c15e7bc0f1e954b2600c5bc480a132597cb7060
+WASM   64fe354a8322a34da95c655fa6684d92d423960ffb5241c54676e95d37f94752
+```
+
+| Check | Observed result |
+|---|---|
+| Model discovery | ChatGPT called `list_generated_files`; the real `bridge-web-0526.svg` card returned with `website_button`, source response and handle. Native log **11:52:58.063Z**; result and model acknowledgement appeared in the same conversation |
+| Stale task handle | A new task attempted the prior handle. `request_download` returned `file_changed` before approval or download, **11:53:36.388Z**; refusal appeared in conversation |
+| Approval denial | In a fresh test chat, ChatGPT discovered `bridge-fresh-0526.svg` and requested its download. In-page **Deny** resolved **12:00:20.198Z**; `approval_denied` returned to the conversation. No matching file existed in Downloads |
+| Panel discovery and approval | With the real card rendered, the controls discovered it at **12:03:46.282Z**. **Request generated-file download → Approve once** resolved **12:06:37.299Z**. The website button produced Chrome download **225**, `bridge-fresh-0526.svg`, **283 bytes**; the host recorded `manual_share_required` and the original session still had **zero shared artifacts** |
+| Actual import bytes | The downloaded SVG was copied to `/Users/test/bridge-acceptance-0521/files/bridge-fresh-0526.svg` through the installed host's framed protocol with explicit harness approval. Source and destination are **283 bytes**, SHA256 **`c4a05fb35ecaec4b68878598ada7362fbf3214d5e5b37455281050fe79f374e0`**, with one imported artifact receipt. Original preserved |
+
+The last row used a **synthetic native transport session**, not a live provider integration. The original browser tabs changed conversations during acceptance and the original URL later redirected to the home page. Its expired session was correctly refused by artifact registration. Browser mutations stopped when that change was detected. The isolated framing harness registered its own clearly labeled test session, approved only this file's import and unregistered afterward. A complete final-bundle browser selection → import → in-conversation result remains **incomplete**.
+
+ChatGPT also virtualized the earlier file card out of the DOM: discovery returned zero files until the card was scrolled into view. The earlier test conversation reached its context limit; its pending result remained saved. Neither condition counts as an uninterrupted pass. File selection controls were corrected to preserve their displayed selection across reactive status updates and clear a disconnected session. A complete post-fix import selection check was interrupted by changing browser state.
+
+The installed host passed **41 self-tests**, all in temporary workspaces. Doctor passed config, native manifest, installed binary, SQLite and **1,089 matching database/file audit entries** at its recorded snapshot; `cargo test --workspace` passed **261 tests, 0 failures, 1 intentionally ignored long-running test**, with documentation tests passing. The final targeted checks passed 8 native generated-file tests, 44 core tests and 6 extension tests. Linux/Intel CI is checked separately after publication. No archaeology files, signing identities, macOS permissions, task budgets or YOLO settings were changed. Raw local acceptance logs are ignored under `docs/evidence/0.5.26/`; screenshots with other browser/desktop content are not public artifacts.
+
 ## Provider delivery fixes 0.5.25 — November 17, 2026
 
 This milestone fixes observed website adapter failures while preserving strict tool parsing, host-issued identity and workspace policy. Tests used the existing **general / standard** scratch workspace, with **16 calls/task and 4/response**, YOLO off and network off. No archaeology files or OS permission settings were changed. The current machine is Apple Silicon / macOS 27.0.1; physical older Intel acceptance remains open.

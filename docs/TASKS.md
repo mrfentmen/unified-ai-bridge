@@ -8,6 +8,8 @@ Current capabilities come from `crates/bridge-core/src/catalog.rs`; live evidenc
 
 ## Current implementation progress
 
+The 0.5.26 work adds `list_generated_files` and `request_download` through native admission, task budgets, approvals and audit. Handles bind rendered file controls to the current conversation/task. Download claims survive reloads and never automatically repeat uncertain actions. ChatGPT file cards need explicit completed-download selection because Chrome exposes only the site's origin as referrer; a same-named file is not sufficient attribution. Supported explicit download links use Chrome's returned download ID. Provider-specific export menus, uploads and image delivery remain open under UAB-11–13. See [browser-file controls and limits](BROWSER-FILES.md).
+
 The product remains a **general local execution bridge** for coding, game projects, research, documents and media work. Shared reliability and file exchange come before application-specific integrations; ordinary folders and source files need no per-app integration.
 
 The 0.5.23 work implements bounded ChatGPT fresh-chat handoffs with preserved task budgets/receipts, visible context/quota diagnostics and persisted pending delivery. Live acceptance and exact boundaries are recorded in [VERIFICATION.md](VERIFICATION.md); this does not close UAB-04/05 for every provider or whole-task scheduling. [Continuation behavior](CONTINUATION.md).

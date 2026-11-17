@@ -11,6 +11,10 @@ extern "C" {
     pub fn query_tabs(query: &JsValue) -> Result<js_sys::Promise, JsValue>;
     #[wasm_bindgen(js_namespace = ["chrome", "downloads"], js_name = search, catch)]
     pub fn downloads_search(query: &JsValue) -> Result<js_sys::Promise, JsValue>;
+    #[wasm_bindgen(js_namespace = ["chrome", "downloads"], js_name = download, catch)]
+    pub fn downloads_download(options: &JsValue) -> Result<js_sys::Promise, JsValue>;
+    #[wasm_bindgen(js_namespace = ["chrome", "downloads"], js_name = cancel, catch)]
+    pub fn downloads_cancel(id: i32) -> Result<js_sys::Promise, JsValue>;
     #[wasm_bindgen(js_namespace = ["chrome", "runtime"], js_name = connectNative)]
     fn connect_native_port(application: &str) -> JsValue;
 

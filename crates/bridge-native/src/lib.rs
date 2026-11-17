@@ -1,4 +1,5 @@
 pub mod app;
+pub mod browser_files;
 pub mod approvals;
 pub mod config;
 pub mod diagnostics;

@@ -25,6 +25,8 @@ use crate::js;
 use crate::model::{ActivityView, ApprovalView, BackgroundResponse, StatusView};
 #[path = "chat_recovery.rs"]
 mod recovery;
+#[path = "generated_files.rs"]
+mod generated_files;
 use bridge_core::recovery::{pending_result_state, DeliveryRetry, FormatRepairBudget, PendingResultState, WebsiteBlock};
 
 const POLL_MS: i32 = 2_000;
@@ -123,6 +125,15 @@ pub async fn bridge_content() {
     let listener = Closure::<dyn FnMut(JsValue, JsValue, JsValue) -> JsValue>::new(
         move |message, _, respond| {
             if let Some(value) = js::from_js::<Value>(message) {
+                if value["type"] == "browser_operation" {
+                    let outcome: Result<Value,String> = if value["expires_at_ms"].as_f64().unwrap_or(0.0)<=js::now_ms() {
+                        Err("Browser operation expired; inspect downloads before retrying.".into())
+                    } else { serde_json::from_value(value["scope"].clone()).map_err(|_|"Invalid browser scope.".to_string())
+                        .and_then(|scope|serde_json::from_value(value["action"].clone()).map_err(|_|"Invalid browser action.".to_string())
+                            .and_then(|action|generated_files::handle(&updates.borrow(),scope,action))) };
+                    if let Some(respond) = js::function(&respond) { js::respond(&respond, &json!(outcome)); }
+                    return JsValue::FALSE;
+                }
                 if value["type"] == "bridge_status_changed" {
                     spawn_local(poll_status(updates.clone()));
                     if let Some(respond) = js::function(&respond) {
