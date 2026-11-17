@@ -1,5 +1,29 @@
 # Verification record
 
+## Workspace task budgets and setup delivery 0.5.24 — November 17, 2026
+
+Installed **0.5.24 / protocol 8** in the existing general scratch workspace. Source, emitted manifest, Chrome extension card, in-page panel and native hello agree. This is a shared control/reliability milestone for any project type, not complete unattended game or movie production.
+
+| Check | Actual evidence |
+|---|---|
+| Build and installation | Pinned Rust/WASM/native/tooling builds exited 0. Final host hello **09:20:03.764Z**; extension card and panel showed 0.5.24 / protocol 8 |
+| Automated checks | Full workspace suite **245 passed, 0 failed, 1 ignored**; documentation tests passed. Final source was rerun after the setup-delivery fix; its targeted **43 core/extension tests** also passed. The separately verified long command test was not rerun |
+| Installed host | **41 self-tests passed** in temporary folders. Doctor passed config, registration, installed binary, SQLite and audit validation |
+| Budget boundaries | Tests cover 1–256 task / 1–32 response bounds, unknown fields, wrong workspace, persistence, reset, frozen existing tasks, lowering during handoff and no replenishment after host restart |
+| Framed host | Real write/read with a two-call ceiling; extra response slot and exhausted task denied. Raising limits to 64 and restarting preserved exhaustion. A genuinely new task received 64; only one write was recorded |
+| Long-task receipts | A 150-call native test with a 256-call allowance handed off **106 remaining calls** and the latest **24** receipts, numbered 126–149; earlier pages did not displace recent outcomes |
+| Live budget controls | Opened the real extension controls and saved **2 calls/task, 1/response**. Later saved 4/4 and 64/4; the task panel kept the exhausted original at **0 calls left**. Reset restored installation defaults **16/4** |
+| Live website loop | ChatGPT wrote `files/budget-0524.txt` at **09:25:02.662Z**, read it at **09:25:08.303Z**, and received **task_budget_exceeded** at **09:25:14.110Z**. The denial returned into the conversation and the model stopped |
+| File evidence | Exactly **23 bytes**, `Budget limits verified.` with no newline; SHA256 `b0106a504e6f488682596239cea2d1066be7551c59c2c2c699e5dcc0b8911ee0`. Workspace `/Users/test/bridge-acceptance-0521`, one successful write receipt |
+| New-task isolation | A new explicit `workspace_info` task received the then-current **4/4** ceiling and reported it in the conversation. SQLite retained the earlier task's original **2/1** ceiling; changing settings did not rewrite it |
+| Reload/setup | Reload returned to connected without replaying the write. Fresh-chat setup and a deliberate reinjection in the same conversation both acknowledged successfully on the corrected sender; setup executed no tools |
+
+Initial test failures and live limitations are retained. One new isolation test incorrectly reopened an App expecting its supplied folder to override the durable active-workspace registry; using the real create/select workflow fixed the test. Live testing found setup acknowledgement did not tolerate inline backticks being stripped and its error path allowed repeated automatic setup attempts. Added normalized acknowledgement and persisted unconfirmed-submission state. The old verification chat reached a real context-full gate; it was left stopped and the acceptance task ran in a fresh chat. Do not count that old chat as an uninterrupted pass. An accessibility automation attempt entered 4 instead of the intended 64; host logs exposed it, and the later corrected 64 save was verified separately.
+
+Native SHA256: `68ffb7ab98d7a21822bef424770f9f1ed656c79fbc7785cac2747478c64643c9`. Final WASM SHA256: `e3bfda86ac7ba71fbf4c190eae7156e778acba226579bbce1ac3078ece2deacb`. Private raw evidence is in ignored `docs/evidence/0.5.24/`. The prior 0.5.23 commit `aa5e175` passed Linux tests, Intel macOS tests and packaging in [CI run 44051551412](https://github.com/mrfentmen/unified-ai-bridge/actions/runs/44051551412); that is not CI evidence for 0.5.24.
+
+**Still open:** full provider acceptance on this build, hands-off recovery on other providers, actual docked-side-panel/popup-specific acceptance, image/file exchange, broader app/game/media controls, whole-task scheduling/reports, stable macOS permission persistence and physical older Intel testing. This pass exercised the side-panel route in a Chrome tab through accessibility controls, not a docked panel. No archaeology files were modified; YOLO and network access remained off.
+
 ## ChatGPT continuation and durable delivery 0.5.23 — November 17, 2026
 
 Installed build **0.5.23 / protocol 7**, verified in Chrome's extension card, the in-page shadow panel, generated manifest and native handshake. The current machine remains macOS 27.0.1 / Apple Silicon; a physical older Intel Mac remains unverified. Tests used the existing general scratch workspace. The archaeology project was not touched.

@@ -486,3 +486,100 @@ fn expired_or_stopped_handoffs_cannot_bind_and_lineage_keeps_receipts() {
     let other=app.register_session(Provider::ChatGpt,1,1,"https://chatgpt.com/c/stopped",None,None).unwrap().session;
     assert!(continuation::control(&app,&app.workspace.id(),&other.id,H::Bind{handoff_id:next["handoff_id"].as_str().unwrap().into(),task_id:"later".into()}).unwrap_err().to_string().contains("stopped"));
 }
+
+#[test]
+fn workspace_budget_controls_persist_validate_and_keep_existing_tasks_frozen() {
+    use bridge_native::task_limits::{self, Control as B, Limits};
+    let temp = tempfile::tempdir().unwrap();
+    let (app, session) = fixture(&temp);
+    let original = observe(&app, &session, "before-settings");
+    let save = B::Save { limits: Limits { calls_per_task: 64, calls_per_response: 8 } };
+    assert!(task_limits::control(&app, "wrong-workspace", save.clone()).is_err());
+    for (task, response) in [(0,4), (257,4), (16,0), (16,33)] {
+        assert!(task_limits::control(&app,&app.workspace.id(),B::Save {limits:Limits {
+            calls_per_task:task,calls_per_response:response}}).is_err());
+    }
+    assert!(serde_json::from_value::<B>(json!({"operation":"save","limits":{"calls_per_task":64,"calls_per_response":8,"agent":"admin"}})).is_err());
+    let (app, value) = task_limits::control(&app,&app.workspace.id(),save).unwrap();
+    assert_eq!(value["limits"]["calls_per_task"],64);
+    assert_eq!(detail(&app,&original)["task"]["remaining_calls"],3);
+    assert_eq!(detail(&app,&original)["task"]["effective_response_limit"],2);
+    let next = observe(&app,&session,"after-settings");
+    assert_eq!((next.call_limit,next.response_limit),(64,8));
+    for n in 0..3 { assert!(matches!(claim(&app,&original,&format!("old-{n}"),30),RequestClaim::New)); }
+    assert!(matches!(claim(&app,&original,"old-exhausted",30),RequestClaim::Rejected(s) if s.contains("task_budget_exceeded")));
+    let home=app.home.clone();
+    let workspace=app.workspace.clone();
+    drop(app);
+    let config=home.load_config().unwrap();
+    let app=App::open_with_config(home,config,workspace,true).unwrap();
+    assert_eq!(task_limits::current(&app).calls_per_task,64);
+    assert_eq!(detail(&app,&original)["task"]["remaining_calls"],0);
+    let (reset, value)=task_limits::control(&app,&app.workspace.id(),B::Reset).unwrap();
+    assert_eq!(value["override"],false);
+    assert_eq!(task_limits::current(&reset).calls_per_task,3);
+    assert_eq!(detail(&reset,&next)["task"]["effective_call_limit"],3);
+    assert_eq!(detail(&reset,&original)["task"]["remaining_calls"],0);
+    assert!(reset.store.verify_audit().unwrap().valid);
+}
+
+#[test]
+fn workspace_budget_changes_are_isolated_and_handoffs_cannot_refill_them() {
+    use bridge_native::{task_limits::{self,Control as B,Limits}, continuation::{self,Control as H}};
+    let temp=tempfile::tempdir().unwrap();
+    let (app,session)=fixture(&temp);
+    let task=observe(&app,&session,"source");
+    assert!(matches!(claim(&app,&task,"completed",30),RequestClaim::New));
+    app.store.finish_response_timed(&task.scope,"completed",0,"{\"status\":\"ok\"}",1).unwrap();
+    let (app,_)=task_limits::control(&app,&app.workspace.id(),B::Save{limits:Limits{calls_per_task:128,calls_per_response:8}}).unwrap();
+    let prepared=continuation::control(&app,&app.workspace.id(),&session.id,H::Prepare{task_id:"source".into()}).unwrap();
+    assert_eq!(prepared["remaining_calls"],2);
+    let target=app.register_session(Provider::ChatGpt,1,1,"https://chatgpt.com/c/new-budget-chat",None,None).unwrap().session;
+    let bound=continuation::control(&app,&app.workspace.id(),&target.id,H::Bind{handoff_id:prepared["handoff_id"].as_str().unwrap().into(),task_id:"handoff".into()}).unwrap();
+    assert_eq!(bound["task"]["call_limit"],2);
+    assert_eq!(bound["task"]["response_limit"],2);
+    let other=app.create_workspace("second",temp.path().join("second-workspace").to_str().unwrap(),Profile::General).unwrap();
+    let other=app.select_workspace(&other.id).unwrap();
+    assert_eq!(task_limits::current(&other).calls_per_task,3);
+    assert!(task_limits::control(&other,&app.workspace.id(),B::Reset).is_err());
+    assert_eq!(task_limits::current(&app).calls_per_task,128);
+}
+
+#[test]
+fn long_task_handoff_selects_the_latest_receipts_not_the_first_page() {
+    use bridge_native::{task_limits::{self,Control as B,Limits},continuation::{self,Control as H}};
+    let temp=tempfile::tempdir().unwrap();
+    let (app,session)=fixture(&temp);
+    let (app,_)=task_limits::control(&app,&app.workspace.id(),B::Save{limits:Limits{calls_per_task:256,calls_per_response:4}}).unwrap();
+    let task=observe(&app,&session,"long-task");
+    for n in 0..150 {
+        let response=format!("long-{n}");
+        assert!(matches!(claim(&app,&task,&response,30),RequestClaim::New));
+        app.store.finish_response_timed(&task.scope,&response,0,"{\"status\":\"ok\"}",1).unwrap();
+    }
+    let prepared=continuation::control(&app,&app.workspace.id(),&session.id,H::Prepare{task_id:"long-task".into()}).unwrap();
+    assert_eq!(prepared["remaining_calls"],106);
+    assert_eq!(prepared["receipt_count"],150);
+    assert_eq!(prepared["more_receipts"],true);
+    let rows=prepared["receipts"].as_array().unwrap();
+    assert_eq!(rows.len(),24);
+    assert_eq!(rows.first().unwrap()["response_id"],"long-126");
+    assert_eq!(rows.last().unwrap()["response_id"],"long-149");
+}
+
+#[test]
+fn lowering_budgets_during_a_prepared_handoff_cannot_restore_spent_calls() {
+    use bridge_native::{task_limits::{self,Control as B,Limits},continuation::{self,Control as H}};
+    let temp=tempfile::tempdir().unwrap();
+    let (app,session)=fixture(&temp);
+    let task=observe(&app,&session,"lowered");
+    assert!(matches!(claim(&app,&task,"spent",30),RequestClaim::New));
+    app.store.finish_response_timed(&task.scope,"spent",0,"{\"status\":\"ok\"}",1).unwrap();
+    let h=continuation::control(&app,&app.workspace.id(),&session.id,H::Prepare{task_id:"lowered".into()}).unwrap();
+    assert_eq!(h["remaining_calls"],2);
+    let (app,_)=task_limits::control(&app,&app.workspace.id(),B::Save{limits:Limits{calls_per_task:1,calls_per_response:1}}).unwrap();
+    let target=app.register_session(Provider::ChatGpt,1,1,"https://chatgpt.com/c/lowered-budget",None,None).unwrap().session;
+    let result=continuation::control(&app,&app.workspace.id(),&target.id,H::Bind{handoff_id:h["handoff_id"].as_str().unwrap().into(),task_id:"new".into()});
+    assert!(result.unwrap_err().to_string().contains("exhausted"));
+    assert_eq!(detail(&app,&task)["task"]["remaining_calls"],0);
+}

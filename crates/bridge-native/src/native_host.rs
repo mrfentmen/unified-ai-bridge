@@ -361,8 +361,8 @@ pub async fn run() -> Result<()> {
                     index: call_index,
                     tool: &tool,
                     arguments: &arguments,
-                    response_limit: app.config.max_calls_per_response,
-                    task_limit: app.config.max_calls_per_task,
+                    response_limit: crate::task_limits::current(&app).calls_per_response,
+                    task_limit: crate::task_limits::current(&app).calls_per_task,
                     timeout_secs: app.config.tool_timeout_secs,
                 }) {
                     Ok(claim) => claim,
@@ -813,6 +813,17 @@ pub async fn run() -> Result<()> {
                 }
                 log.write("info",&format!("panel task control {action:?} workspace={workspace_id} request={request_key}"));
                 send_control(&tx,request_key,crate::tasks::control(&app,&workspace_id,action)).await;
+            }
+            ExtToHost::TaskBudgetControl { request_key, workspace_id, action } => {
+                if !is_ready(&hello) {
+                    send_error(&tx,"hello_required","send hello before task budgets".into(),Some(request_key)).await;
+                    continue;
+                }
+                log.write("info", &format!("panel task budgets {action:?} workspace={workspace_id} request={request_key}"));
+                match crate::task_limits::control(&app,&workspace_id,action) {
+                    Ok((next,value)) => { app=next; send_control(&tx,request_key,Ok(value)).await; }
+                    Err(error) => send_control(&tx,request_key,Err(error)).await,
+                }
             }
             ExtToHost::Preflight { request_key } => {
                 send_control(&tx, request_key, crate::tools::system::preflight(&app)).await;

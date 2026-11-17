@@ -60,6 +60,7 @@ pub enum ExtToHost {
         action: crate::tasks::Control,
     },
     ContinueTask { request_key: String, workspace_id: String, session_id: String, action: crate::continuation::Control },
+    TaskBudgetControl { request_key: String, workspace_id: String, action: crate::task_limits::Control },
     Preflight {
         request_key: String,
     },

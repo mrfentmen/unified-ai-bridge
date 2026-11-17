@@ -10,7 +10,9 @@ pub fn context_changed(saved_workspace:&str,saved_hash:&str,workspace:&str,hash:
 /// a new website-issued turn ID and a matching normalized opening fragment.
 pub fn submitted_message_matches(before:Option<&str>,after:&str,expected:&str,observed:&str)->bool {
     if after.is_empty() || before==Some(after) {return false;}
-    let normalize=|s:&str|s.chars().filter(|c|!c.is_whitespace()).take(512).collect::<String>();
+    // ChatGPT renders inline-code backticks even inside a user message. This
+    // acknowledgement comparison is separate from tool parsing/authorization.
+    let normalize=|s:&str|s.chars().filter(|c|!c.is_whitespace() && *c!='`').take(512).collect::<String>();
     let expected=normalize(expected);
     let observed=normalize(observed);
     let prefix:String=expected.chars().take(180).collect();
@@ -102,6 +104,8 @@ mod tests {
         let long="real submitted text ".repeat(80);
         let shown=format!("{} … Show more",long.chars().take(240).collect::<String>());
         assert!(submitted_message_matches(None,"new",&long,&shown));
+        assert!(submitted_message_matches(Some("old"),"new","Workspace is `/Users/test/project`. Read `files/input.txt`.","Workspace is /Users/test/project. Read files/input.txt."));
+        assert!(!submitted_message_matches(Some("old"),"new","Workspace is `/Users/test/project`.","Workspace is /Users/test/different."));
     }
     #[test]
     fn context_and_quota_have_distinct_recovery() {

@@ -46,8 +46,8 @@ impl Task {
             original_session: session.id.clone(),
             state: "running".into(),
             revision: 0,
-            response_limit: app.config.max_calls_per_response,
-            call_limit: app.config.max_calls_per_task,
+            response_limit: crate::task_limits::current(app).calls_per_response,
+            call_limit: crate::task_limits::current(app).calls_per_task,
             created_at: now.clone(),
             updated_at: now,
             parent_task: None,
@@ -182,10 +182,11 @@ fn snapshot(app: &App, task: &Task) -> Result<Value> {
     let mut value = serde_json::to_value(task)?;
     value.as_object_mut().unwrap().remove("scope");
     let counts = app.store.task_counts(task)?;
-    value["effective_call_limit"] = json!(task.call_limit.min(app.config.max_calls_per_task));
+    value["effective_call_limit"] = json!(task.call_limit.min(crate::task_limits::current(app).calls_per_task));
+    value["effective_response_limit"] = json!(task.response_limit.min(crate::task_limits::current(app).calls_per_response));
     value["remaining_calls"] = json!(task
         .call_limit
-        .min(app.config.max_calls_per_task)
+        .min(crate::task_limits::current(app).calls_per_task)
         .saturating_sub(counts["reserved_calls"].as_u64().unwrap_or(0) as u32));
     value["counts"] = counts;
     value["observed_age_seconds"] = json!(chrono::DateTime::parse_from_rfc3339(&task.created_at)

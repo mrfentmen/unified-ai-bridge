@@ -414,6 +414,16 @@ impl Store {
         after: i64,
         limit: u32,
     ) -> Result<Vec<serde_json::Value>> {
+        self.task_steps_ordered(task, after, limit, false)
+    }
+
+    pub fn recent_task_steps(&self, task: &crate::tasks::Task, limit: u32) -> Result<Vec<serde_json::Value>> {
+        let mut rows = self.task_steps_ordered(task, 0, limit, true)?;
+        rows.reverse();
+        Ok(rows)
+    }
+
+    fn task_steps_ordered(&self, task: &crate::tasks::Task, after: i64, limit: u32, newest: bool) -> Result<Vec<serde_json::Value>> {
         let conn = self.conn.lock().expect("store mutex");
         // SQL extracts bounded receipt fields without reading raw file content into the report.
         let sql = format!("SELECT json_object('cursor',rowid,'response_id',response_id,'call_index',call_index,'session_id',session_id,'audit_seq',audit_seq,
@@ -424,7 +434,7 @@ impl Store {
             'summary',substr(COALESCE(json_extract(result_json,'$.error'),json_extract(result_json,'$.summary')),1,512),
             'change_id',substr(json_extract(result_json,'$.data.change_id'),1,128),'patch_id',substr(json_extract(result_json,'$.data.patch_id'),1,128),
             'job_id',substr(json_extract(result_json,'$.data.job_id'),1,128),'review_id',substr(json_extract(result_json,'$.data.review_id'),1,128))
-            FROM response_requests WHERE scope=?1 AND task_id=?2 AND rowid>?4 ORDER BY rowid LIMIT ?5",TASK_OUTCOME_SQL);
+            FROM response_requests WHERE scope=?1 AND task_id=?2 AND rowid>?4 ORDER BY rowid {} LIMIT ?5",TASK_OUTCOME_SQL, if newest {"DESC"} else {"ASC"});
         let mut query = conn.prepare(&sql)?;
         let rows = query.query_map(
             params![

@@ -15,7 +15,7 @@ pub mod workspace;
 pub use error::CoreError;
 
 /// Wire protocol revision. The extension and host both send this in `hello`.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// Chrome native messaging host name.
 pub const NATIVE_HOST_NAME: &str = "com.unified_ai_bridge.host";

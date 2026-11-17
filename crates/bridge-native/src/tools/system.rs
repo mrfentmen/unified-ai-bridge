@@ -70,7 +70,7 @@ pub async fn workspace_info(
         "root":policy.root,"profile":policy.profile,"read_only":policy.read_only,"permission_mode":policy.permission_mode,
         "tools":ctx.app.workspace.profile.tools().map(|t|t.name).collect::<Vec<_>>(),"commands":commands,
         "network":super::network::policy(ctx.app),
-        "limits":{"text_bytes":super::MAX_READ_BYTES,"artifact_bytes":super::artifacts::MAX_BYTES,"approval_seconds":ctx.app.config.approval_timeout_secs,"tool_seconds":ctx.app.config.tool_timeout_secs,"calls_per_response":ctx.app.config.max_calls_per_response,"calls_per_task":ctx.app.config.max_calls_per_task}})))
+        "limits":{"text_bytes":super::MAX_READ_BYTES,"artifact_bytes":super::artifacts::MAX_BYTES,"approval_seconds":ctx.app.config.approval_timeout_secs,"tool_seconds":ctx.app.config.tool_timeout_secs,"calls_per_response":crate::task_limits::current(ctx.app).calls_per_response,"calls_per_task":crate::task_limits::current(ctx.app).calls_per_task}})))
 }
 
 pub fn preflight(app: &crate::app::App) -> anyhow::Result<Value> {
@@ -87,7 +87,7 @@ pub fn preflight(app: &crate::app::App) -> anyhow::Result<Value> {
         json!({"system":information(app),"workspace":policy,"commands":commands,"network":super::network::policy(app),
         "checks":{"workspace_exists":app.workspace.root.is_dir(),"workspace_unlocked":!policy.read_only,
             "workspace_readable":std::fs::read_dir(&app.workspace.root).is_ok(),"audit_valid":app.store.verify_audit()?.valid},
-        "limits":{"tool_seconds":app.config.tool_timeout_secs,"calls_per_response":app.config.max_calls_per_response,"calls_per_task":app.config.max_calls_per_task},
+        "limits":{"tool_seconds":app.config.tool_timeout_secs,"calls_per_response":crate::task_limits::current(app).calls_per_response,"calls_per_task":crate::task_limits::current(app).calls_per_task},
         "browser_readiness":"The panel checks the loaded extension and registered sessions separately. Registration does not establish composer readiness or account availability."}),
     )
 }

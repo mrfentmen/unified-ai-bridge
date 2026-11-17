@@ -24,6 +24,9 @@ pub struct Config {
     pub approval_timeout_secs: u64,
     pub max_calls_per_response: u32,
     pub max_calls_per_task: u32,
+    /// Explicit panel selections scoped to a canonical workspace. Existing
+    /// tasks never acquire a larger ceiling when these settings increase.
+    pub workspace_task_limits: std::collections::BTreeMap<String, crate::task_limits::Limits>,
     pub tool_timeout_secs: u64,
     pub desktop_tools_enabled: bool,
     /// Scripts the user has explicitly approved by name. No arbitrary shell.
@@ -50,6 +53,7 @@ impl Default for Config {
             approval_timeout_secs: 180,
             max_calls_per_response: 4,
             max_calls_per_task: 16,
+            workspace_task_limits: Default::default(),
             tool_timeout_secs: 240,
             desktop_tools_enabled: true,
             approved_scripts: Vec::new(),
@@ -320,6 +324,12 @@ pub fn validate_config(config: &Config) -> Result<()> {
     }
     if !(1..=3600).contains(&config.tool_timeout_secs) {
         bail!("tool_timeout_secs must be between 1 and 3600");
+    }
+    for (workspace, limits) in &config.workspace_task_limits {
+        if workspace.len() != 24 || !workspace.bytes().all(|b| b.is_ascii_hexdigit()) {
+            bail!("invalid task budget workspace ID");
+        }
+        limits.validate()?;
     }
     if let Some(id) = &config.extension_id {
         validate_extension_id(id)?;

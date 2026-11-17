@@ -107,7 +107,7 @@ pub fn control(app: &App, workspace: &str, session_id: &str, action: Control) ->
                 let used: u32 = tx.query_row("SELECT COUNT(*) FROM response_requests WHERE scope=?1 AND task_id=?2 AND status!='rejected'", params![source.scope,source.task_id], |r|r.get(0))?;
                 let remaining = source
                     .call_limit
-                    .min(app.config.max_calls_per_task)
+                    .min(crate::task_limits::current(app).calls_per_task)
                     .saturating_sub(used);
                 ensure!(
                     remaining > 0,
@@ -192,9 +192,13 @@ pub fn control(app: &App, workspace: &str, session_id: &str, action: Control) ->
                     );
                     target.parent_task = Some(source.id.clone());
                     target.handoff_count = source.handoff_count + 1;
-                    target.call_limit = h.remaining_calls.min(app.config.max_calls_per_task);
+                    let used: u32 = tx.query_row("SELECT COUNT(*) FROM response_requests WHERE scope=?1 AND task_id=?2 AND status!='rejected'", params![source.scope,source.task_id], |r|r.get(0))?;
+                    target.call_limit = h.remaining_calls.min(source.call_limit
+                        .min(crate::task_limits::current(app).calls_per_task).saturating_sub(used));
+                    ensure!(target.call_limit > 0, "task budget was lowered and is now exhausted; handoff refused");
+                    h.remaining_calls = target.call_limit;
                     target.response_limit =
-                        source.response_limit.min(app.config.max_calls_per_response);
+                        source.response_limit.min(crate::task_limits::current(app).calls_per_response);
                     source.state = "stopped".into();
                     source.revision += 1;
                     // INSERT (not replace): an existing task must never get a new budget.
@@ -269,13 +273,18 @@ pub fn control(app: &App, workspace: &str, session_id: &str, action: Control) ->
         ensure!(task.workspace_id==workspace && task.provider==session.provider,"invalid parent task ownership");
         lineage.push(task);
     }
-    let mut receipts=Vec::new();
+    let mut segments=Vec::new();
+    let mut remaining=24;
     let mut count=0;
-    for task in lineage.iter().rev() {
+    for task in &lineage {
         count+=app.store.task_step_count(task)?;
-        receipts.extend(app.store.task_steps(task,0,128)?);
+        if remaining>0 {
+            let rows=app.store.recent_task_steps(task,remaining)?;
+            remaining-=rows.len() as u32;
+            segments.push(rows);
+        }
     }
-    if receipts.len()>24 {receipts.drain(..receipts.len()-24);}
+    let receipts=segments.into_iter().rev().flatten().collect::<Vec<_>>();
     Ok(
         json!({"handoff_id":handoff.id,"task":handoff.target,"remaining_calls":handoff.remaining_calls,
         "bound":state=="bound","cancelled":handoff.cancelled,"expires_at":handoff.expires_at,

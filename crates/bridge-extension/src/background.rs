@@ -182,6 +182,7 @@ enum BgRequest {
         action: Value,
     },
     TaskControl { workspace_id: String, action: Value },
+    TaskBudgetControl { workspace_id: String, action: Value },
     ContinueTask { session_id: String, workspace_id: String, action: Value },
     ContinuationState { session_id: String, #[serde(default)] state: Option<Value>, #[serde(default)] clear: bool },
     YoloControl { workspace_id: String, action: Value },
@@ -722,6 +723,7 @@ fn handle_message(
         | BgRequest::RecoveryControl { .. }
         | BgRequest::JobControl { .. }
         | BgRequest::TaskControl { .. }
+        | BgRequest::TaskBudgetControl { .. }
         | BgRequest::YoloControl { .. }
         | BgRequest::NetworkControl { .. }
         | BgRequest::Preflight
@@ -789,6 +791,7 @@ fn handle_message(
                     action,
                 } => json!({"type":"job_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::TaskControl {workspace_id,action} => json!({"type":"task_control","workspace_id":workspace_id,"action":action}),
+                BgRequest::TaskBudgetControl {workspace_id,action} => json!({"type":"task_budget_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::YoloControl {workspace_id,action} => json!({"type":"yolo_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::NetworkControl {workspace_id,action} => json!({"type":"network_control","workspace_id":workspace_id,"action":action}),
                 BgRequest::Preflight => json!({"type":"preflight"}),

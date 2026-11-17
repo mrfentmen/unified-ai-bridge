@@ -4,6 +4,14 @@ The bridge can run an approved command as a background job, save its output, and
 
 ## Chat task controls (0.5.17 candidate)
 
+### Workspace call budgets (0.5.24)
+
+Open **Task call budgets** in the popup or side panel, click **Load workspace budgets**, choose the task and response ceilings, then **Save task budgets** before sending a new task. The maximum is 256 calls per task and 32 per assistant response. These settings are saved for the selected workspace and survive host restart. **Use installation budgets** removes that workspace's override; the installation defaults remain 16 and 4 unless configured otherwise.
+
+An observed task freezes its original ceiling. Increasing the workspace setting never replenishes it, including after Pause/Resume, reconnect or a fresh-chat handoff. Lowering a ceiling also limits existing tasks' next calls. Previously admitted operations may finish. A handoff carries only the unused allowance and at most the latest 24 execution receipts across its lineage; it cannot create a new budget.
+
+These are tool-call limits, not permission grants, time limits, a model scheduler or a promise that a model will finish. Models and provider pages cannot change them. Write approvals, YOLO expiry, command allowlists/timeouts, network grants and protected paths remain separate. `workspace_info` and readiness report current workspace ceilings; Chat task controls shows a particular task's actual remaining calls.
+
 The popup and side panel have **Chat task controls and receipts**. Refresh to see up to 100 recent tasks in the selected workspace. Each record belongs to the host-validated provider, conversation, workspace and observed user message. Registration or receiving a tool result does not create a task. Records appear when a task first requests a tool; they do not enumerate planned steps the model has not submitted.
 
 **Pause local calls** blocks new calls and calls waiting for an execution slot. It also closes pending approvals, including when Pause is quickly followed by Resume. A call already executing outside an approval wait may finish. **Resume local calls** permits new response slots with the same remaining budget. It does not send a message, wake a model or replay a rejected block. The content script skips replies observed while paused. Continuing an idle conversation may require a new user message, which is a new task with its own budget. **Stop this task** permanently closes admission for that task; a new explicit user task can still start.

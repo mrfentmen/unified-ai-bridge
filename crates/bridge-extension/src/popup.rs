@@ -238,6 +238,7 @@ fn bridge_ui(wide: bool) -> impl IntoView {
             <SectionTitle text="Recent local activity"/>
             <JobControls status=status error=error/>
             <TaskControls status=status error=error/>
+            <TaskBudgetControls status=status error=error/>
             <RecoveryControls status=status error=error/>
             <ActivityFeed status=status error=error/>
 
@@ -1104,6 +1105,65 @@ fn ReadinessControls(
                 match workspace_request(json!({"op":"preflight"})).await{Ok(value)=>report.set(serde_json::to_string_pretty(&value).unwrap_or_default()),Err(e)=>error.set(Some(e))}
             })>"Check host and workspace"</button>
             <pre style="white-space:pre-wrap;overflow:auto;max-height:340px">{move||report.get()}</pre>
+        </details>
+    }
+}
+
+#[component]
+fn TaskBudgetControls(status: RwSignal<StatusView>, error: RwSignal<Option<String>>) -> impl IntoView {
+    let task = RwSignal::new(String::new());
+    let response = RwSignal::new(String::new());
+    let notice = RwSignal::new(String::new());
+    let loaded = RwSignal::new(false);
+    let busy = RwSignal::new(false);
+    let seen_workspace = RwSignal::new(String::new());
+    Effect::new(move |_| {
+        let workspace = status.get().active_id;
+        if workspace != seen_workspace.get_untracked() {
+            seen_workspace.set(workspace);
+            loaded.set(false);
+            task.set(String::new());
+            response.set(String::new());
+            notice.set(String::new());
+        }
+    });
+    let request = move |action: Value| {
+        if busy.get_untracked() { return; }
+        let workspace = status.get_untracked().active_id;
+        busy.set(true);
+        spawn_local(async move {
+            let result=workspace_request(json!({"op":"task_budget_control","workspace_id":workspace,"action":action})).await;
+            if status.get_untracked().active_id==workspace {
+                match result {
+                    Ok(value) => {
+                        task.set(value["limits"]["calls_per_task"].to_string());
+                        response.set(value["limits"]["calls_per_response"].to_string());
+                        notice.set(format!("New tasks: {} calls total · {} per assistant response · {}",
+                            value["limits"]["calls_per_task"],value["limits"]["calls_per_response"],
+                            if value["override"]==true {"saved for this workspace"} else {"installation defaults"}));
+                        loaded.set(true);
+                        error.set(None);
+                    }
+                    Err(e) => error.set(Some(e)),
+                }
+            }
+            busy.set(false);
+        });
+    };
+    view! {
+        <details style="margin:10px 0"><summary>"Task call budgets"</summary>
+            <p>"Choose limits before sending a new task. Each tool request uses a call. Existing tasks never gain calls; lowering these ceilings also restricts their next calls. Resume and fresh-chat handoffs keep the unused original budget. Permissions and command timeouts are separate."</p>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||status.get().bridge!="connected" on:click=move |_|request(json!({"operation":"status"}))>"Load workspace budgets"</button>
+            <label>"Calls per task (1–256)"<input aria-label="Calls per task" type="number" min="1" max="256" style=CONTROL_STYLE prop:value=move||task.get() on:input=move|ev|task.set(event_target_value(&ev))/></label>
+            <label>"Calls per response (1–32)"<input aria-label="Calls per response" type="number" min="1" max="32" style=CONTROL_STYLE prop:value=move||response.get() on:input=move|ev|response.set(event_target_value(&ev))/></label>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||!loaded.get() on:click=move |_|{
+                match (task.get().parse::<u32>(),response.get().parse::<u32>()) {
+                    (Ok(t),Ok(r)) if (1..=256).contains(&t)&&(1..=32).contains(&r) => request(json!({"operation":"save","limits":{"calls_per_task":t,"calls_per_response":r}})),
+                    _ => error.set(Some("Choose 1–256 calls per task and 1–32 per response.".into())),
+                }
+            }>"Save task budgets"</button>
+            <button style=CONTROL_STYLE disabled=move||busy.get()||!loaded.get() on:click=move |_|request(json!({"operation":"reset"}))>"Use installation budgets"</button>
+            <div role="status">{move||notice.get()}</div>
         </details>
     }
 }

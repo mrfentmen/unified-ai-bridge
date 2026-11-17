@@ -795,3 +795,44 @@ fn framed_continuation_moves_only_unused_budget_and_never_replays_original_write
     let writes:u32=db.query_row("SELECT COUNT(*) FROM response_requests WHERE json_extract(payload,'$[0]')='write_document' AND status='complete'",[],|r|r.get(0)).unwrap();
     assert_eq!(writes,1);
 }
+
+#[test]
+fn framed_workspace_budgets_enforce_new_limits_without_refilling_old_tasks() {
+    let temp=tempfile::tempdir().unwrap();
+    let home=temp.path().join("home");
+    let root=temp.path().join("workspace");
+    let binary=binary();
+    setup_workspace(&binary,&home,&root);
+    let mut host=HostProcess::start(&binary,&home,&[]);
+    let session=host.register();
+    let set = |host: &mut HostProcess, task, response| {
+        host.send(&json!({"type":"task_budget_control","request_key":"limits","workspace_id":host.workspace_id,
+            "action":{"operation":"save","limits":{"calls_per_task":task,"calls_per_response":response}}}));
+        host.receive_until("control_result")["result"].clone()
+    };
+    assert_eq!(set(&mut host,2,1)["limits"]["calls_per_task"],2);
+    let path="AGENTS/CHATGPT/notes/budget.txt";
+    assert_eq!(host.tool(&session,"budget-write",0,"write_document",json!({"path":path,"content":"budget survives settings and restart\n"}))["status"],"ok");
+    assert_eq!(host.tool(&session,"budget-write",1,"read_file",json!({"path":path}))["code"],"response_budget_exceeded");
+    // An explicit increase changes future tasks, never this observed task.
+    assert_eq!(set(&mut host,64,8)["limits"]["calls_per_task"],64);
+    assert_eq!(host.tool(&session,"budget-read",0,"read_file",json!({"path":path}))["status"],"ok");
+    assert_eq!(host.tool(&session,"budget-exhausted",0,"read_file",json!({"path":path}))["code"],"task_budget_exceeded");
+    drop(host);
+    let mut host=HostProcess::start(&binary,&home,&[]);
+    let session=host.register();
+    host.send(&json!({"type":"task_budget_control","request_key":"status","workspace_id":host.workspace_id,"action":{"operation":"status"}}));
+    assert_eq!(host.receive_until("control_result")["result"]["limits"]["calls_per_task"],64);
+    assert_eq!(host.tool(&session,"after-restart",0,"read_file",json!({"path":path}))["code"],"task_budget_exceeded");
+    host.send(&json!({"type":"tool_request","session_id":session,"workspace_id":host.workspace_id,
+        "request_key":bridge_core::execution::request_key("chatgpt","reliability","new-task-read",0),
+        "response_id":"new-task-read","task_id":"new-explicit-user-task","call_index":0,
+        "tool":"read_file","arguments":{"path":path}}));
+    assert_eq!(host.receive_until("tool_result")["result"]["status"],"ok");
+    let db=rusqlite::Connection::open(home.join("bridge.sqlite3")).unwrap();
+    let limit:u32=db.query_row("SELECT json_extract(record,'$.call_limit') FROM chat_tasks WHERE task_id='new-explicit-user-task'",[],|r|r.get(0)).unwrap();
+    assert_eq!(limit,64);
+    let writes:u32=db.query_row("SELECT COUNT(*) FROM response_requests WHERE json_extract(payload,'$[0]')='write_document' AND status='complete'",[],|r|r.get(0)).unwrap();
+    assert_eq!(writes,1);
+    assert_eq!(std::fs::read_to_string(root.join(path)).unwrap(),"budget survives settings and restart\n");
+}

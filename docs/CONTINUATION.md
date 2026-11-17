@@ -22,6 +22,8 @@ Queued results retain their workspace, conversation/turn identity, draft ownersh
 
 A page reload can recover a queued result. A changed user turn or workspace prevents delivery into the wrong context. An existing user draft is preserved. A missing transcript during page hydration is not treated as evidence of a changed turn.
 
+In 0.5.24, setup messages also record an unconfirmed submission in conversation memory before sending. Automatic retries pause until a new matching user message is visible; inspect the conversation before manually reinjecting. Acknowledgement tolerates the website removing inline-code backticks, without relaxing the tool parser. A context-full conversation or a transcript showing older messages may still require attention.
+
 The sender attempts a submit control once. If the website does not acknowledge submission, the result remains saved and automatic resubmission stops. Inspect the chat before using **Send pending result**. This prevents repeated clicks from submitting duplicate messages during slow responses. A confirmed context-full rejection can use the handoff path.
 
 Transfers refuse unknown/running tool outcomes, running/interrupted command jobs, unrelated drafts, changed workspaces, exhausted budgets and stopped tasks. They never repeat a local tool call to make the new chat appear current.

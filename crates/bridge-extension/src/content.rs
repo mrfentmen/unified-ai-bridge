@@ -240,6 +240,12 @@ struct SavedResult {
     retry: DeliveryRetry,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct InstructionSubmission {
+    context_hash: String,
+    preceding_user: Option<String>,
+}
+
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 struct ConversationMemory {
     #[serde(default)]
@@ -254,6 +260,8 @@ struct ConversationMemory {
     auto_continue: bool,
     #[serde(default)]
     pending: Option<SavedResult>,
+    #[serde(default)]
+    instruction_submission: Option<InstructionSubmission>,
 }
 
 fn memory_key(state: &ContentState) -> Option<String> {
@@ -1105,6 +1113,36 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
     let Some(document) = web_sys::window().and_then(|window| window.document()) else {
         return;
     };
+    let context_hash = {
+        let s=shared.borrow();
+        request_key(s.provider.slug(),&s.workspace_id,&instructions,0)
+    };
+    let submitted = shared.borrow().memory.instruction_submission.clone();
+    if let Some(submitted) = submitted {
+        let confirmed = submitted.context_hash == context_hash && adapter.last_user(&document).is_some_and(|user|
+            bridge_core::recovery::submitted_message_matches(submitted.preceding_user.as_deref(),&adapter.user_id(&user),&instructions,&assistant_text(&user)));
+        if confirmed {
+            let mut s=shared.borrow_mut();
+            s.connected=true;
+            s.auto_attempted=true;
+            s.pending_workspace_context=false;
+            s.memory.instructions_sent=true;
+            s.memory.context_hash=context_hash.clone();
+            s.memory.instruction_submission=None;
+            s.memory.task_id=None;
+            s.error=None;
+            save_memory(&s);
+            render(&s);
+            return;
+        }
+        if automatic {
+            let mut s=shared.borrow_mut();
+            s.auto_attempted=true;
+            s.error=Some("Setup submission is unconfirmed. Automatic retries are paused. Inspect this conversation before clicking Inject tool instructions.".into());
+            render(&s);
+            return;
+        }
+    }
     // A page reload starts a fresh content script. If the instruction message is
     // already in this conversation, reconnect without sending it a second time.
     if !shared.borrow().pending_workspace_context
@@ -1199,6 +1237,21 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
         return;
     }
     shared.borrow_mut().sending_instructions = true;
+    shared.borrow_mut().memory.instruction_submission=Some(InstructionSubmission {
+        context_hash,
+        preceding_user:adapter.last_user(&document).map(|u|adapter.user_id(&u)),
+    });
+    let saved = { let s=shared.borrow();memory_key(&s).map(|key|(key,memory_snapshot(&s))) };
+    if let Some((key,memory))=saved {
+        if oxichrome::storage::set(&key,&memory).await.is_err() {
+            let mut s=shared.borrow_mut();
+            s.sending_instructions=false;
+            s.auto_attempted=true;
+            s.error=Some("Could not save setup delivery state. No setup message was submitted.".into());
+            render(&s);
+            return;
+        }
+    }
     let draft = shared.borrow().instructions_draft.clone();
     let context_current = || route_current(&shared, epoch);
     match adapter
@@ -1220,6 +1273,7 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
             state.sending_instructions = false;
             state.instructions_draft = Rc::default();
             state.memory.instructions_sent = true;
+            state.memory.instruction_submission = None;
             state.memory.context_hash = request_key(
                 state.provider.slug(),
                 &state.workspace_id,
@@ -1238,8 +1292,9 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
             }
             let mut state = shared.borrow_mut();
             state.sending_instructions = false;
-            state.auto_attempted = false;
-            state.error = Some(format!("Could not inject tool instructions: {err}"));
+            state.auto_attempted = true;
+            state.error = Some(format!("Could not confirm tool instructions: {err} Inspect the conversation before clicking Inject tool instructions; automatic retries are paused."));
+            save_memory(&state);
             render(&state);
         }
     }
@@ -1256,7 +1311,7 @@ async fn maybe_auto_connect(state: Rc<RefCell<ContentState>>) {
         )
     };
     if (enabled || state.borrow().pending_workspace_context)
-        && !attempted
+        && (!attempted || state.borrow().memory.instruction_submission.is_some())
         && !connected
         && has_session
     {
@@ -2611,9 +2666,11 @@ mod recovery_memory_tests {
             context_hash:"known".into(),workspace_id:"workspace".into(),instructions_sent:true,
             task_id:Some("original-user".into()),task_goal:"Build a game".into(),auto_continue:true,
             pending:Some(SavedResult {text:"actual saved result".into(),turn:DeliveryTurn {conversation:"chat".into(),user:"user".into(),assistant:"response".into()},draft:Some("exact editor draft".into()),retry:DeliveryRetry {submission_uncertain:true,..Default::default()}}),
+            instruction_submission:Some(InstructionSubmission{context_hash:"known".into(),preceding_user:Some("before-setup".into())}),
         };
         let restored:ConversationMemory=serde_json::from_str(&serde_json::to_string(&memory).unwrap()).unwrap();
         assert_eq!(restored.task_id.as_deref(),Some("original-user"));
+        assert_eq!(restored.instruction_submission.unwrap().preceding_user.as_deref(),Some("before-setup"));
         let p=restored.pending.unwrap();
         assert_eq!(p.text,"actual saved result");
         assert_eq!(p.draft.as_deref(),Some("exact editor draft"));
@@ -2623,5 +2680,6 @@ mod recovery_memory_tests {
         assert_eq!(legacy.task_id.as_deref(),Some("old"));
         assert!(!legacy.auto_continue);
         assert!(legacy.pending.is_none());
+        assert!(legacy.instruction_submission.is_none());
     }
 }
