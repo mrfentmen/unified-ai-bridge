@@ -388,3 +388,101 @@ fn workspace_and_provider_scopes_keep_control_and_budgets_separate() {
         app.workspace.root.display().to_string()
     );
 }
+
+#[test]
+fn continuation_preserves_remaining_budget_and_rejects_cross_tab_replay() {
+    use bridge_native::continuation::{self, Control as H};
+    let temp = tempfile::tempdir().unwrap();
+    let (app, source) = fixture(&temp);
+    let task = observe(&app,&source,"original-task");
+    assert!(matches!(claim(&app,&task,"completed-read",30),RequestClaim::New));
+    app.store.finish_response(&task.scope,"completed-read",0,"{\"status\":\"ok\",\"summary\":\"read real source\"}").unwrap();
+    let prepare = || continuation::control(&app,&app.workspace.id(),&source.id,H::Prepare{task_id:task.task_id.clone()});
+    let handoff = prepare().unwrap();
+    assert_eq!(handoff["remaining_calls"],2);
+    assert_eq!(prepare().unwrap()["handoff_id"],handoff["handoff_id"]);
+    assert!(matches!(claim(&app,&task,"blocked-old",30),RequestClaim::Rejected(_)));
+    assert!(tasks::control(&app,&app.workspace.id(),Control::Resume{task_id:task.id.clone()}).is_err());
+    let target = app.register_session(Provider::ChatGpt,1,1,"https://chatgpt.com/c/continued",None,None).unwrap().session;
+    let bind = H::Bind{handoff_id:handoff["handoff_id"].as_str().unwrap().into(),task_id:"handoff-message".into()};
+    let other = app.register_session(Provider::ChatGpt,2,1,"https://chatgpt.com/c/continued",None,None).unwrap().session;
+    assert!(continuation::control(&app,&app.workspace.id(),&other.id,bind.clone()).is_err());
+    assert!(continuation::control(&app,"wrong-workspace",&target.id,bind.clone()).is_err());
+    let bound = continuation::control(&app,&app.workspace.id(),&target.id,bind.clone()).unwrap();
+    let child: Task = serde_json::from_value(bound["task"].clone()).unwrap();
+    assert_eq!(child.parent_task,Some(task.id.clone()));
+    assert_eq!(child.call_limit,2);
+    assert_eq!(child.handoff_count,1);
+    assert_eq!(continuation::control(&app,&app.workspace.id(),&target.id,bind).unwrap()["task"]["id"],child.id);
+    assert_eq!(app.store.task(&task.id).unwrap().unwrap().state,"stopped");
+    assert!(matches!(claim(&app,&child,"new1",30),RequestClaim::New));
+    assert!(matches!(claim(&app,&child,"new2",30),RequestClaim::New));
+    assert!(matches!(claim(&app,&child,"new3",30),RequestClaim::Rejected(s) if s.contains("task_budget_exceeded")));
+    assert!(app.store.verify_audit().unwrap().valid);
+}
+
+#[test]
+fn continuation_blocks_uncertain_work_and_cancel_or_stop_cannot_grant_more_calls() {
+    use bridge_native::continuation::{self, Control as H};
+    let temp = tempfile::tempdir().unwrap();
+    let (app, source) = fixture(&temp);
+    let task = observe(&app,&source,"task");
+    let prepare = || continuation::control(&app,&app.workspace.id(),&source.id,H::Prepare{task_id:"task".into()});
+    assert!(matches!(claim(&app,&task,"running",30),RequestClaim::New));
+    assert!(prepare().unwrap_err().to_string().contains("uncertain"));
+    app.store.finish_response(&task.scope,"running",0,"{\"status\":\"ok\"}").unwrap();
+    let h = prepare().unwrap();
+    let handoff_id = h["handoff_id"].as_str().unwrap().to_string();
+    continuation::control(&app,&app.workspace.id(),&source.id,H::Cancel{handoff_id:handoff_id.clone()}).unwrap();
+    assert_eq!(app.store.task(&task.id).unwrap().unwrap().state,"paused");
+    let target = app.register_session(Provider::ChatGpt,1,1,"https://chatgpt.com/c/after-cancel",None,None).unwrap().session;
+    assert!(continuation::control(&app,&app.workspace.id(),&target.id,H::Bind{handoff_id,task_id:"new".into()}).is_err());
+    assert_eq!(detail(&app,&task)["task"]["remaining_calls"],2);
+    assert!(serde_json::from_value::<H>(json!({"operation":"prepare","task_id":"x","provider":"claude"})).is_err());
+}
+
+#[test]
+fn continuation_survives_host_restart_without_reopening_the_source_task() {
+    use bridge_native::continuation::{self, Control as H};
+    let temp = tempfile::tempdir().unwrap();
+    let (app, source) = fixture(&temp);
+    let task = observe(&app,&source,"task");
+    let h = continuation::control(&app,&app.workspace.id(),&source.id,H::Prepare{task_id:"task".into()}).unwrap();
+    let (home,config,workspace)=(app.home.clone(),app.config.clone(),app.workspace.clone());
+    drop(app);
+    let app = App::open_with_config(home,config,workspace,true).unwrap();
+    assert_eq!(app.store.task(&task.id).unwrap().unwrap().state,"transferring");
+    let target = app.register_session(Provider::ChatGpt,1,1,"https://chatgpt.com/c/after-restart",None,None).unwrap().session;
+    let h = continuation::control(&app,&app.workspace.id(),&target.id,H::Bind{handoff_id:h["handoff_id"].as_str().unwrap().into(),task_id:"new".into()}).unwrap();
+    assert_eq!(h["task"]["call_limit"],3);
+    assert_eq!(app.store.task(&task.id).unwrap().unwrap().state,"stopped");
+}
+
+#[test]
+fn expired_or_stopped_handoffs_cannot_bind_and_lineage_keeps_receipts() {
+    use bridge_native::continuation::{self,Control as H};
+    let temp=tempfile::tempdir().unwrap();
+    let (app,source)=fixture(&temp);
+    let t=observe(&app,&source,"task");
+    assert!(matches!(claim(&app,&t,"first",30),RequestClaim::New));
+    app.store.finish_response(&t.scope,"first",0,"{\"status\":\"ok\",\"summary\":\"first completed receipt\"}").unwrap();
+    let prepare=continuation::control(&app,&app.workspace.id(),&source.id,H::Prepare{task_id:"task".into()}).unwrap();
+    let handoff_id=prepare["handoff_id"].as_str().unwrap();
+    let conn=rusqlite::Connection::open(&app.home.database).unwrap();
+    conn.execute("UPDATE task_handoffs SET record=json_set(record,'$.expires_at',0) WHERE id=?1",[handoff_id]).unwrap();
+    let new=app.register_session(Provider::ChatGpt,1,1,"https://chatgpt.com/c/expiry",None,None).unwrap().session;
+    let bind=H::Bind{handoff_id:handoff_id.into(),task_id:"new".into()};
+    assert!(continuation::control(&app,&app.workspace.id(),&new.id,bind.clone()).unwrap_err().to_string().contains("expired"));
+    conn.execute("UPDATE task_handoffs SET record=json_set(record,'$.expires_at',?2) WHERE id=?1",rusqlite::params![handoff_id,chrono::Utc::now().timestamp()+1800]).unwrap();
+    let bound=continuation::control(&app,&app.workspace.id(),&new.id,bind).unwrap();
+    let child:Task=serde_json::from_value(bound["task"].clone()).unwrap();
+    assert!(matches!(claim(&app,&child,"second",30),RequestClaim::New));
+    app.store.finish_response(&child.scope,"second",0,"{\"status\":\"ok\",\"summary\":\"second completed receipt\"}").unwrap();
+    let next=continuation::control(&app,&app.workspace.id(),&new.id,H::Prepare{task_id:"new".into()}).unwrap();
+    assert_eq!(next["remaining_calls"],1);
+    assert_eq!(next["receipt_count"],2);
+    assert!(next["receipts"].to_string().contains("first completed receipt"));
+    control(&app,Control::Stop{task_id:child.id});
+    let other=app.register_session(Provider::ChatGpt,1,1,"https://chatgpt.com/c/stopped",None,None).unwrap().session;
+    assert!(continuation::control(&app,&app.workspace.id(),&other.id,H::Bind{handoff_id:next["handoff_id"].as_str().unwrap().into(),task_id:"later".into()}).unwrap_err().to_string().contains("stopped"));
+}

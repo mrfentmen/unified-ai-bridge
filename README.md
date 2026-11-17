@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.22** — Opt-in YOLO mode reduces repeated local-write approvals. ChatGPT created and read back a Rust file without an approval click; ten hidden tabs recovered their sessions after a host restart without replaying writes. Provider quota/context limits and broader unattended workflows still need work. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.23** — ChatGPT can continue an active task in a fresh chat with saved execution receipts and its unused tool budget. Automatic context-full handoff, draft protection and real file creation/read-back passed in Chrome. Other provider recovery, application workflows and fully unattended operation remain unfinished. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -35,6 +35,7 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **Switch workspaces from the panel.** Choose a folder or enter its path, select a profile, and send updated workspace context to connected chats. Lock a workspace when you want read-only access.
 - **See what happened.** Inspect sessions, pending approvals, tool results, activity, and a hash-chained audit log. A direct tool runner lets you exercise the host without prompting a model.
 - **Connect reviewed native MCP tools.** Register a local native executable, discover its tools, and explicitly grant access. Each call requires approval. The 0.5.14 candidate adds readiness checks and stops active process groups when grants are removed or the workspace locks. [Integration limits](docs/INTEGRATIONS.md).
+- **Continue long ChatGPT tasks (0.5.23).** Carry the original task, execution receipts and unused call budget into a fresh chat. Opt-in automatic handoff handles the visible context-full gate; quotas and uncertain outcomes pause it. [Controls and boundaries](docs/CONTINUATION.md).
 - **Run bounded background work.** Approved commands can keep running through a browser reconnect. Inspect saved output, stop jobs, and grant a selected session time-limited file writes with budgets. See [overnight controls](docs/OVERNIGHT.md).
 - **Reduce repeated approvals with YOLO.** Opt in for a chosen duration and approval cap in the current workspace. Routine code/file edits and supported output creation run automatically; Stop restores normal prompts. Protected paths and separate command/delete/network policies remain enforced. Off after host restart or workspace/policy changes. [Exact scope](docs/OVERNIGHT.md#yolo-mode-0522).
 - **Pause a chat's local calls (0.5.17 candidate).** Keep task budgets and receipts across host restarts, block new calls, close waiting approvals and save a private task report. Already executing work may finish; background commands have separate Stop controls. Resume does not restart the model or replay an old write. [Task controls and limits](docs/OVERNIGHT.md#chat-task-controls-0517-candidate).

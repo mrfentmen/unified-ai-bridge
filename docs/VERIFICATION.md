@@ -1,6 +1,33 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest installed build is **0.5.22**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The YOLO and hidden-tab session-recovery checks below passed. Website context/quota limits and the remaining acceptance rows are still open.
+## ChatGPT continuation and durable delivery 0.5.23 — November 17, 2026
+
+Installed build **0.5.23 / protocol 7**, verified in Chrome's extension card, the in-page shadow panel, generated manifest and native handshake. The current machine remains macOS 27.0.1 / Apple Silicon; a physical older Intel Mac remains unverified. Tests used the existing general scratch workspace. The archaeology project was not touched.
+
+| Check | Actual evidence |
+|---|---|
+| Build/install | Pinned Cargo, rustc and rustdoc; extension WASM plus native/tooling release builds exited 0. Source, package and loaded Chrome build matched 0.5.23; host hello at **08:43:23.779Z** |
+| Automated suite | **240 passed, 0 failed, 1 ignored** across the workspace; all three documentation-test suites passed. The previously verified long command test was not rerun |
+| Packaged host | **41 self-tests passed** in temporary folders. Doctor passed configuration, native registration/binary, SQLite and matching DB/file audit chains (**902 entries** at the final diagnostic snapshot) |
+| Real framed transfer | A real Native Messaging child wrote a file, prepared a handoff, restarted, bound its unused budget to a new conversation, read the file, and refused an extra call. One successful write receipt, no forbidden file |
+| Persisted delivery / draft refusal | A genuine ChatGPT read was held behind a known test draft. Reload preserved the draft and queued result. Continue refused while the draft remained. Clearing only that test draft allowed handoff |
+| First live transfer | The new ChatGPT conversation created `files/handoff-0523.gd` and read it back. One successful write receipt; **75 bytes**, SHA256 `dfc8953a4491d1e2cb0878f4bd224bbabc6f67dfaf31f67bf889b2c967a1a8b0`. The initial adapter stalled on a replaced composer; after the sender fix and reload, the prepared handoff recovered and finished. This first run is recovery evidence, not an uninterrupted pass |
+| Uninterrupted live transfer | On the final sender build, preparation at **08:46:21Z**, fresh-chat registration/binding at **08:46:27Z**, write at **08:46:31.524Z**, read-back at **08:46:38.497Z**. `files/handoff-0523-final.txt` contains exactly `Fresh chat handoff completed.` — **29 bytes**, SHA256 `65b359a690ebcd767fabb478e215d439ce072c7ddc52be1518df724b39474f81`. Both result blocks and the model's completion reply were visible in the destination conversation; no reload or second task prompt was required |
+| Automatic context-full recovery | Enabled Auto handoff on the real previously full verification chat after clearing its known old bridge-result draft. The visible website banner triggered preparation at **08:48:36.468Z** and binding at **08:48:40.416Z**, without clicking Continue. Its original 16-call task had used one call; the target ceiling was **15**, not a new 16 |
+| Scoped handle denial after transfer | The model tried the old conversation's `apply_patch` handle. The host returned `permission_denied` for conversation ownership, delivered that result, and the model stopped. `files/yolo-0522-denied.rs` remains absent. This verifies ownership denial, not an Approve/Deny-button flow or a successful transferred patch |
+| Safety tests | Cross-tab/workspace claims, stale/expired/cancelled/stopped tickets, old-source admission, exhausted budgets, host restart, receipt lineage, saved draft/uncertain submission, context-versus-quota classification and no automatic resubmission are covered |
+
+Both successful handoffs retained the actual unused budget and stopped admission in the source task. The transcript's tool blocks came from the website model. No mocked provider response or manually injected assistant block was used. The GDScript artifact demonstrates source-file creation, not execution in Godot; it omitted the originally requested final newline, which is a model-output discrepancy rather than an exact-content acceptance pass. The later text-file test passed its exact-content requirement.
+
+Native SHA256: `977cfe3b68ac3515c01eb95152417cff8074f350040ee9a7af5b9a91ba78cb11`. WASM SHA256: `a36e3d7433478319f656ca747051a296850525771e2d8a172137fe6894b8e71b`.
+
+An initial full-suite command passed its test binaries but selected Homebrew rustdoc, producing compiler-version errors in documentation tests. Pinning RUSTDOC alongside CARGO/RUSTC fixed that invocation. Live testing also found an empty stored instruction fingerprint incorrectly invalidated a task on reload and that a detached composer could stall send acknowledgement. Both were fixed and regression-tested before the uninterrupted pass.
+
+**Still open:** fresh-chat recovery on other providers; the full provider matrix on 0.5.23; Qwen candidate/foreground handling; Gemini setup drafts; larger task-budget controls/scheduling; automatic generated-file collection and approved uploads; application/game-engine/media integration acceptance; docked-panel/popup and remaining tool UI matrices; stable signing/OS consent; physical Intel hardware. No valid code-signing identity is installed (`0 valid identities found`); no certificate or TCC setting was changed. This release does not establish a fully hands-off general desktop agent. [Continuation scope](CONTINUATION.md).
+
+Raw transcripts, test logs, package hashes and host lines are private under ignored `docs/evidence/0.5.23/`.
+
+These are recorded results, not a guarantee of every environment. The previous installed build was **0.5.22**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. The YOLO and hidden-tab session-recovery checks below passed. Website context/quota limits and the remaining acceptance rows are still open.
 
 ## YOLO and session recovery 0.5.22 — November 17, 2026
 

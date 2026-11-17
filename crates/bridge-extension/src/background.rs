@@ -182,6 +182,8 @@ enum BgRequest {
         action: Value,
     },
     TaskControl { workspace_id: String, action: Value },
+    ContinueTask { session_id: String, workspace_id: String, action: Value },
+    ContinuationState { session_id: String, #[serde(default)] state: Option<Value>, #[serde(default)] clear: bool },
     YoloControl { workspace_id: String, action: Value },
     NetworkControl { workspace_id: String, action: Value },
     Preflight,
@@ -389,6 +391,36 @@ fn handle_message(
                         .pending_registers
                         .remove(&tab_id);
                     js::respond(&respond_fn, &json!({"ok":false,"error":err}));
+                }
+            });
+        }
+        BgRequest::ContinueTask {session_id,workspace_id,action} => {
+            if !bound_sender(&state, &sender, &session_id, action["operation"]=="cancel") {
+                js::respond(&respond_fn,&json!({"ok":false,"error":"Task handoff requires its registered tab and conversation."}));
+                return;
+            }
+            send_panel_control(state,respond_fn,json!({"type":"continue_task","session_id":session_id,"workspace_id":workspace_id,"action":action}));
+        }
+        BgRequest::ContinuationState {session_id,state:record,clear} => {
+            if !bound_sender(&state,&sender,&session_id,true) {
+                js::respond(&respond_fn,&json!({"ok":false,"error":"Handoff storage requires its registered provider tab."}));
+                return;
+            }
+            let session = state.borrow().sessions.iter().find(|s|s.id==session_id).cloned().unwrap();
+            let key = format!("uab-handoff:{}:{}",session.provider,session.tab_id);
+            spawn_local(async move {
+                let result: Result<Value,String> = async {
+                    if let Some(record)=record {
+                        if record.to_string().len()>96*1024 { return Err("Handoff exceeds the 96 KiB limit.".into()); }
+                        oxichrome::storage::set(&key,&record).await.map_err(|e|format!("Could not save handoff: {e}"))?;
+                        return Ok(record);
+                    }
+                    if clear { oxichrome::storage::set(&key,&Value::Null).await.map_err(|e|e.to_string())?; return Ok(Value::Null); }
+                    Ok(oxichrome::storage::get::<Value>(&key).await.map_err(|e|e.to_string())?.unwrap_or(Value::Null))
+                }.await;
+                match result {
+                    Ok(value)=>js::respond(&respond_fn,&json!({"ok":true,"result":value})),
+                    Err(error)=>js::respond(&respond_fn,&json!({"ok":false,"error":error})),
                 }
             });
         }
@@ -799,6 +831,20 @@ fn handle_message(
             send_panel_control(state, respond_fn, message);
         }
     }
+}
+
+fn bound_sender(state:&Rc<RefCell<BgState>>, sender:&JsValue, session_id:&str, allow_home:bool)->bool {
+    let get = |object:&JsValue,key:&str|js_sys::Reflect::get(object,&JsValue::from_str(key)).ok();
+    let Some(tab)=get(sender,"tab") else {return false;};
+    let tab_id=get(&tab,"id").and_then(|v|v.as_f64()).map(|n|n as i64);
+    let frame=get(sender,"frameId").and_then(|v|v.as_f64());
+    let current=get(&tab,"url").and_then(|v|v.as_string());
+    let origin=get(sender,"url").and_then(|v|v.as_string());
+    state.borrow().sessions.iter().any(|s|s.id==session_id && tab_id==Some(s.tab_id) && frame==Some(0.0) &&
+        current.as_deref().and_then(Provider::from_url).is_some_and(|p|p.slug()==s.provider &&
+            origin.as_deref().and_then(Provider::from_url)==Some(p) &&
+            p.conversation_id(current.as_deref().unwrap()).as_deref()==s.conversation.as_deref() &&
+            (allow_home || s.conversation.is_some())))
 }
 
 fn extension_control(sender: &JsValue) -> bool {

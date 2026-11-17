@@ -76,7 +76,7 @@ pub fn reconnect_delay_ms(attempt: u32) -> u32 {
         .min(30_000)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeliveryTurn {
     pub conversation: String,
     pub user: String,

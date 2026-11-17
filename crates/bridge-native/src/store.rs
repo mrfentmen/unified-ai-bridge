@@ -109,7 +109,7 @@ pub struct ResponseRequest<'a> {
 }
 
 pub struct Store {
-    conn: Mutex<Connection>,
+    pub(crate) conn: Mutex<Connection>,
     audit_path: PathBuf,
     audit_lock: PathBuf,
 }
@@ -244,6 +244,7 @@ impl Store {
             CREATE TABLE IF NOT EXISTS chat_tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
                 scope TEXT NOT NULL, task_id TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(scope,task_id));
             CREATE INDEX IF NOT EXISTS chat_tasks_workspace ON chat_tasks(workspace_id);
+            CREATE TABLE IF NOT EXISTS task_handoffs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, record TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, definition TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS bridge_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS activity_results (activity_id INTEGER PRIMARY KEY REFERENCES activity(id), duration_ms INTEGER NOT NULL, result_json TEXT NOT NULL);
@@ -356,6 +357,9 @@ impl Store {
         }
         if task.state == "stopped" && state != "stopped" {
             bail!("stopped tasks cannot resume; a new explicit user task is required");
+        }
+        if task.state == "transferring" && state != "stopped" {
+            bail!("this task has a prepared handoff; cancel the handoff before resuming");
         }
         if task.state != state {
             task.state = state.into();

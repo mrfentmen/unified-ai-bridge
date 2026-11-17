@@ -755,3 +755,43 @@ fn background_command_survives_native_host_kill_and_returns_same_receipt() {
     assert_eq!(list["data"]["jobs"].as_array().unwrap().len(), 1, "{list}");
     assert_eq!(list["data"]["jobs"][0]["job_id"], id);
 }
+
+#[test]
+fn framed_continuation_moves_only_unused_budget_and_never_replays_original_write() {
+    let temp=tempfile::tempdir().unwrap();
+    let home=temp.path().join("home");
+    let root=temp.path().join("workspace");
+    let binary=binary();
+    setup_workspace(&binary,&home,&root);
+    let mut config:bridge_native::config::Config=toml::from_str(&std::fs::read_to_string(home.join("config.toml")).unwrap()).unwrap();
+    config.max_calls_per_task=2;
+    std::fs::write(home.join("config.toml"),toml::to_string_pretty(&config).unwrap()).unwrap();
+    let mut host=HostProcess::start(&binary,&home,&[]);
+    let session=host.register();
+    let path="AGENTS/CHATGPT/notes/handoff.txt";
+    assert_eq!(host.tool(&session,"source-write",0,"write_document",json!({"path":path,"content":"written once before handoff\n"}))["status"],"ok");
+    host.send(&json!({"type":"continue_task","request_key":"prepare","session_id":session,"workspace_id":host.workspace_id,"action":{"operation":"prepare","task_id":"user-task"}}));
+    let prepared=host.receive_until("control_result")["result"].clone();
+    assert_eq!(prepared["remaining_calls"],1);
+    assert_eq!(host.tool(&session,"source-blocked",0,"write_document",json!({"path":"AGENTS/CHATGPT/notes/forbidden.txt","content":"must not run"}))["code"],"task_paused");
+    // Real host restart between the two halves of the handoff.
+    drop(host);
+    let mut host=HostProcess::start(&binary,&home,&[]);
+    host.register();
+    host.send(&json!({"type":"register_session","provider":"chatgpt","tab_id":77,"url":"https://chatgpt.com/c/continued-task","conversation":"continued-task"}));
+    let target=host.receive_until("session_registered")["session"]["id"].as_str().unwrap().to_string();
+    host.send(&json!({"type":"continue_task","request_key":"bind","session_id":target,"workspace_id":host.workspace_id,"action":{"operation":"bind","handoff_id":prepared["handoff_id"],"task_id":"handoff-user"}}));
+    assert_eq!(host.receive_until("control_result")["result"]["task"]["call_limit"],1);
+    for (response,expected) in [("read-proof","ok"),("exhausted","error")] {
+        host.send(&json!({"type":"tool_request","session_id":target,"workspace_id":host.workspace_id,
+            "request_key":bridge_core::execution::request_key("chatgpt","continued-task",response,0),"response_id":response,"task_id":"handoff-user","call_index":0,"tool":"read_file","arguments":{"path":path}}));
+        let result=host.receive_until("tool_result")["result"].clone();
+        assert_eq!(result["status"],expected,"{result}");
+        if expected=="error" {assert_eq!(result["code"],"task_budget_exceeded");}
+    }
+    assert_eq!(std::fs::read_to_string(root.join(path)).unwrap(),"written once before handoff\n");
+    assert!(!root.join("AGENTS/CHATGPT/notes/forbidden.txt").exists());
+    let db=rusqlite::Connection::open(home.join("bridge.sqlite3")).unwrap();
+    let writes:u32=db.query_row("SELECT COUNT(*) FROM response_requests WHERE json_extract(payload,'$[0]')='write_document' AND status='complete'",[],|r|r.get(0)).unwrap();
+    assert_eq!(writes,1);
+}

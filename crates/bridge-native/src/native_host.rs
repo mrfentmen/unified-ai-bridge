@@ -798,6 +798,14 @@ pub async fn run() -> Result<()> {
                 log.write("info",&format!("panel YOLO control {action:?} workspace={workspace_id} request={request_key}"));
                 send_control(&tx,request_key,crate::yolo::control(&app,&workspace_id,action)).await;
             }
+            ExtToHost::ContinueTask { request_key, workspace_id, session_id, action } => {
+                if !is_ready(&hello) {
+                    send_error(&tx,"hello_required","send hello before continuing a task".into(),Some(request_key)).await;
+                    continue;
+                }
+                log.write("info", &format!("task handoff {action:?} session={session_id} workspace={workspace_id}"));
+                send_control(&tx,request_key,crate::continuation::control(&app,&workspace_id,&session_id,action)).await;
+            }
             ExtToHost::TaskControl {request_key,workspace_id,action} => {
                 if !is_ready(&hello) {
                     send_error(&tx,"hello_required","send hello before task controls".into(),Some(request_key)).await;

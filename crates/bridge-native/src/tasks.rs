@@ -23,6 +23,10 @@ pub struct Task {
     pub call_limit: u32,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub parent_task: Option<String>,
+    #[serde(default)]
+    pub handoff_count: u32,
 }
 
 impl Task {
@@ -46,6 +50,8 @@ impl Task {
             call_limit: app.config.max_calls_per_task,
             created_at: now.clone(),
             updated_at: now,
+            parent_task: None,
+            handoff_count: 0,
         }
     }
 }

@@ -23,6 +23,9 @@ use web_sys::{
 
 use crate::js;
 use crate::model::{ActivityView, ApprovalView, BackgroundResponse, StatusView};
+#[path = "chat_recovery.rs"]
+mod recovery;
+use bridge_core::recovery::{DeliveryRetry, WebsiteBlock};
 
 const POLL_MS: i32 = 2_000;
 const DETECT_MS: i32 = 1_500;
@@ -110,6 +113,9 @@ pub async fn bridge_content() {
         last_register_ms: 0.0,
         route_epoch: 0,
         task_gate: None,
+        continuation: None,
+        continuation_loaded: false,
+        recovering: false,
     }));
 
     install_buttons(&state);
@@ -213,6 +219,9 @@ struct ContentState {
     last_register_ms: f64,
     route_epoch: u64,
     task_gate: Option<(String,String)>,
+    continuation: Option<recovery::Continuation>,
+    continuation_loaded: bool,
+    recovering: bool,
 }
 
 #[derive(Clone)]
@@ -220,6 +229,15 @@ struct PendingResult {
     text: String,
     turn: DeliveryTurn,
     draft: Rc<RefCell<Option<String>>>,
+    retry: Rc<RefCell<DeliveryRetry>>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct SavedResult {
+    text: String,
+    turn: DeliveryTurn,
+    draft: Option<String>,
+    retry: DeliveryRetry,
 }
 
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -230,6 +248,12 @@ struct ConversationMemory {
     workspace_id: String,
     instructions_sent: bool,
     task_id: Option<String>,
+    #[serde(default)]
+    task_goal: String,
+    #[serde(default)]
+    auto_continue: bool,
+    #[serde(default)]
+    pending: Option<SavedResult>,
 }
 
 fn memory_key(state: &ContentState) -> Option<String> {
@@ -241,11 +265,19 @@ fn memory_key(state: &ContentState) -> Option<String> {
 
 fn save_memory(state: &ContentState) {
     if let Some(key) = memory_key(state) {
-        let memory = state.memory.clone();
+        let memory = memory_snapshot(state);
         spawn_local(async move {
             let _ = oxichrome::storage::set(&key, &memory).await;
         });
     }
+}
+
+fn memory_snapshot(state: &ContentState) -> ConversationMemory {
+    let mut memory = state.memory.clone();
+    memory.pending = state.pending_result.as_ref().map(|p|SavedResult {
+        text:p.text.clone(),turn:p.turn.clone(),draft:p.draft.borrow().clone(),retry:p.retry.borrow().clone()
+    });
+    memory
 }
 
 fn update_workspace(shared: &Rc<RefCell<ContentState>>, id: &str, root: &str) {
@@ -277,6 +309,7 @@ fn update_workspace(shared: &Rc<RefCell<ContentState>>, id: &str, root: &str) {
     state.memory.instructions_sent = false;
     state.memory.task_id = None;
     state.memory.workspace_id = id.into();
+    state.memory.auto_continue = false;
     state.error =
         Some("Workspace changed. Updated instructions are queued for this conversation.".into());
     save_memory(&state);
@@ -306,6 +339,8 @@ struct Ui {
     activity_line: HtmlElement,
     connect: HtmlElement,
     send_pending: HtmlElement,
+    continue_chat: HtmlElement,
+    auto_continue: HtmlElement,
     toggle: HtmlElement,
 }
 
@@ -480,6 +515,14 @@ fn build_ui(document: &Document) -> Result<Ui, JsValue> {
     send_pending.set_attribute("type", "button").ok();
     send_pending.set_text_content(Some("Send pending result"));
     style_button(&send_pending);
+    let continue_chat = make(document,"button",&[],&buttons)?;
+    continue_chat.set_attribute("type","button").ok();
+    continue_chat.set_text_content(Some("Continue in fresh chat"));
+    style_button(&continue_chat);
+    let auto_continue = make(document,"button",&[],&buttons)?;
+    auto_continue.set_attribute("type","button").ok();
+    auto_continue.set_text_content(Some("Auto handoff: OFF"));
+    style_button(&auto_continue);
     let workspace_controls = make(document, "button", &[], &buttons)?;
     workspace_controls.set_attribute("type", "button").ok();
     workspace_controls.set_text_content(Some("Workspace controls…"));
@@ -584,6 +627,8 @@ fn build_ui(document: &Document) -> Result<Ui, JsValue> {
         activity_line,
         connect,
         send_pending,
+        continue_chat,
+        auto_continue,
         toggle,
     })
 }
@@ -677,6 +722,7 @@ fn install_buttons(state: &Rc<RefCell<ContentState>>) {
     let send_pending = state.borrow().ui.send_pending.clone();
     let cb = Closure::<dyn FnMut()>::new(move || {
         let state = pending_state.clone();
+        if let Some(pending) = &state.borrow().pending_result { *pending.retry.borrow_mut() = DeliveryRetry::default(); }
         spawn_local(async move {
             flush_pending_result(state).await;
         });
@@ -685,6 +731,8 @@ fn install_buttons(state: &Rc<RefCell<ContentState>>) {
         .add_event_listener_with_callback("click", cb.as_ref().unchecked_ref())
         .ok();
     cb.forget();
+
+    recovery::install_buttons(state);
 
     for allow in [true, false] {
         let approval_state = state.clone();
@@ -789,6 +837,7 @@ fn render(state: &ContentState) {
     ui.bridge_line
         .set_text_content(Some(&format!("native bridge: {}{}", state.bridge,
             if state.yolo["active"] == true { format!(" · YOLO ON · {}s left",state.yolo["remaining_seconds"]) } else { String::new() })));
+    recovery::render(state);
 
     let composer_present = state.adapter.composer(&document).is_some();
     let warning = state
@@ -895,6 +944,7 @@ fn sync_conversation(shared: &Rc<RefCell<ContentState>>) -> bool {
         return false;
     }
     state.conversation = conversation;
+    state.continuation_loaded = false;
     state.task_gate = None;
     state.route_epoch += 1;
     state.session_id = None;
@@ -946,6 +996,11 @@ async fn register_session(shared: Rc<RefCell<ContentState>>) {
     if let Some(key) = key {
         if let Ok(Some(memory)) = oxichrome::storage::get::<ConversationMemory>(&key).await {
             if route_current(&shared, epoch) {
+                if let Some(p)=&memory.pending {
+                    shared.borrow_mut().pending_result=Some(PendingResult {
+                        text:p.text.clone(),turn:p.turn.clone(),draft:Rc::new(RefCell::new(p.draft.clone())),retry:Rc::new(RefCell::new(p.retry.clone()))
+                    });
+                }
                 shared.borrow_mut().memory = memory;
             }
         }
@@ -974,10 +1029,12 @@ async fn register_session(shared: Rc<RefCell<ContentState>>) {
                     &instructions,
                     0,
                 );
-                if !state.memory.workspace_id.is_empty()
-                    && (state.memory.workspace_id != response.workspace_id
-                        || state.memory.context_hash != context_hash)
+                if bridge_core::recovery::context_changed(&state.memory.workspace_id,&state.memory.context_hash,&response.workspace_id,&context_hash)
                 {
+                    if state.memory.workspace_id != response.workspace_id {
+                        state.pending_result = None;
+                        state.memory.auto_continue = false;
+                    }
                     state.pending_workspace_context = true;
                     state.memory.instructions_sent = false;
                     state.memory.task_id = None;
@@ -1014,6 +1071,7 @@ async fn register_session(shared: Rc<RefCell<ContentState>>) {
         }
         render(&state);
     }
+    if recovery::restore_and_drive(shared.clone()).await { return; }
     maybe_auto_connect(shared).await;
 }
 
@@ -1059,6 +1117,7 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
         state.error = None;
         state.adapter_warning = None;
         state.memory.instructions_sent = true;
+        state.memory.context_hash = request_key(state.provider.slug(),&state.workspace_id,&state.instructions,0);
         save_memory(&state);
         render(&state);
         return;
@@ -1093,6 +1152,7 @@ async fn connect_tools(shared: Rc<RefCell<ContentState>>, automatic: bool) {
                 state.error = None;
                 state.adapter_warning = None;
                 state.memory.instructions_sent = true;
+                state.memory.context_hash = request_key(state.provider.slug(),&state.workspace_id,&state.instructions,0);
                 save_memory(&state);
                 render(&state);
                 return;
@@ -1235,7 +1295,13 @@ fn start_polling(state: Rc<RefCell<ContentState>>) {
     let callback =
         Closure::<dyn FnMut(js_sys::Array, web_sys::MutationObserver)>::new(move |_, _| {
             let shared = observed.clone();
-            js::schedule(0, move || detect_tool_request(shared));
+            js::schedule(0, move || {
+                detect_tool_request(shared.clone());
+                // Navigation and handoff acknowledgements must not wait for
+                // Chrome's heavily throttled background-tab interval.
+                let recover={let s=shared.borrow();s.continuation.is_some()&&!s.recovering};
+                if recover {spawn_local(poll_status(shared));}
+            });
         });
     if let Ok(observer) = web_sys::MutationObserver::new(callback.as_ref().unchecked_ref()) {
         let options = web_sys::MutationObserverInit::new();
@@ -1333,6 +1399,7 @@ async fn poll_status(state: Rc<RefCell<ContentState>>) {
         spawn_local(register_session(state.clone()));
         return;
     }
+    if recovery::restore_and_drive(state.clone()).await { return; }
     maybe_auto_connect(state.clone()).await;
     flush_pending_result(state).await;
 }
@@ -1360,7 +1427,7 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
         let state = state.borrow();
         (
             state.connected,
-            state.in_flight || state.pending_result.is_some() || state.sending_result,
+            state.in_flight || state.pending_result.is_some() || state.sending_result || state.recovering || state.continuation.is_some(),
             state.session_id.clone(),
         )
     };
@@ -1409,10 +1476,11 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
         let first_observation = current.observed_user.is_none();
         let changed = current.observed_user.as_deref() != Some(&turn.user);
         current.observed_user = Some(turn.user.clone());
-        if user_text.contains(INSTRUCTIONS_MARKER) {
+        if user_text.contains(INSTRUCTIONS_MARKER) && !user_text.contains(recovery::HANDOFF_MARKER) {
             current.memory.task_id = None;
         } else if !user_text.contains(protocol::RESULT_OPEN) && changed && !first_observation {
             current.memory.task_id = Some(turn.user.clone());
+            current.memory.task_goal = user_text.clone();
             current.error = None;
         }
         if changed {
@@ -1574,8 +1642,10 @@ fn detect_tool_request(state: Rc<RefCell<ContentState>>) {
             text: result_text,
             turn,
             draft: Rc::default(),
+            retry: Rc::default(),
         });
         state_ref.in_flight = false;
+        save_memory(&state_ref);
         render(&state_ref);
         drop(state_ref);
         flush_pending_result(state.clone()).await;
@@ -1618,7 +1688,8 @@ async fn flush_pending_result(state: Rc<RefCell<ContentState>>) {
     let Some(pending) = pending else {
         return;
     };
-    if state.borrow().in_flight || state.borrow().sending_result {
+    if state.borrow().in_flight || state.borrow().sending_result || state.borrow().recovering
+        || state.borrow().task_gate.as_ref().is_some_and(|(_,s)|matches!(s.as_str(),"transferring"|"stopped")) {
         return;
     }
     let Some(window) = web_sys::window() else {
@@ -1628,10 +1699,25 @@ async fn flush_pending_result(state: Rc<RefCell<ContentState>>) {
         return;
     };
     let adapter = state.borrow().adapter;
+    if adapter.delivery_turn(&document).is_none()
+        && adapter.last_user(&document).is_none_or(|user|adapter.user_id(&user)==pending.turn.user) {
+        // During hydration/background rendering, a missing turn is not proof
+        // that the queued result became stale. Keep it until identity resolves.
+        return;
+    }
     if !delivery_current(&state, epoch, &pending.turn) {
         discard_stale_result(&state, epoch);
         return;
     }
+    if let Some(block)=recovery::website_block(adapter,&document) {
+        state.borrow_mut().error=Some(block.message().into());
+        render(&state.borrow());
+        if block==WebsiteBlock::ContextFull && state.borrow().memory.auto_continue {
+            recovery::begin(state.clone()).await;
+        }
+        return;
+    }
+    if !pending.retry.borrow().ready(js::now_ms()) { return; }
     if adapter.is_generating(&document) {
         state.borrow_mut().error = Some(
             "Result queued while the assistant is busy. It will send when the composer is ready."
@@ -1653,6 +1739,18 @@ async fn flush_pending_result(state: Rc<RefCell<ContentState>>) {
         return;
     }
     state.borrow_mut().sending_result = true;
+    // Persist the uncertain-delivery boundary before touching the submit
+    // control. A reload between clicking and acknowledgement must not resend.
+    pending.retry.borrow_mut().submission_uncertain = true;
+    let saved = {let s=state.borrow(); memory_key(&s).map(|key|(key,memory_snapshot(&s)))};
+    if let Some((key,memory))=saved {
+        if oxichrome::storage::set(&key,&memory).await.is_err() {
+            state.borrow_mut().sending_result=false;
+            state.borrow_mut().error=Some("Could not save pending delivery. No message was submitted; use Send pending result after storage recovers.".into());
+            render(&state.borrow());
+            return;
+        }
+    }
     let context_current = || route_current(&state, epoch);
     match adapter
         .send_guarded_message(
@@ -1673,6 +1771,7 @@ async fn flush_pending_result(state: Rc<RefCell<ContentState>>) {
             state.sending_result = false;
             state.error = None;
             state.connected = true;
+            save_memory(&state);
             render(&state);
         }
         Err(err) => {
@@ -1681,7 +1780,12 @@ async fn flush_pending_result(state: Rc<RefCell<ContentState>>) {
             }
             let mut state = state.borrow_mut();
             state.sending_result = false;
+            let rejected_by_context = recovery::website_block(adapter,&document)==Some(WebsiteBlock::ContextFull)
+                && pending.turn.is_current(adapter.delivery_turn(&document).as_ref());
+            if rejected_by_context {pending.retry.borrow_mut().submission_uncertain=false;}
+            pending.retry.borrow_mut().failed(js::now_ms(), !rejected_by_context);
             state.error = Some(format!("Could not return the tool result: {err}"));
+            save_memory(&state);
             render(&state);
         }
     }
@@ -1707,6 +1811,7 @@ fn discard_stale_result(state: &Rc<RefCell<ContentState>>, epoch: u64) {
     state.pending_result = None;
     state.in_flight = false;
     state.sending_result = false;
+    save_memory(&state);
     state.error = Some("A result belongs to an older conversation turn. It was kept in local activity and was not sent to this turn.".into());
     render(&state);
 }
@@ -2261,6 +2366,8 @@ impl Adapter {
         let composer = self
             .composer(document)
             .ok_or_else(|| "message box not found; the website may have changed".to_string())?;
+        let preceding_user = self.last_user(document).map(|user|self.user_id(&user));
+        if let Some(block)=recovery::website_block(self,document) { return Err(block.message().into()); }
         let own_draft = draft.is_some_and(|draft| {
             draft.borrow().as_deref() == Some(composer_text(&composer).as_str())
         });
@@ -2312,21 +2419,16 @@ impl Adapter {
             }
             sleep_ms(100).await;
         }
-        if clicked && wait_for_send(&composer, 12).await {
-            return Ok(());
-        }
         if clicked {
-            check_route()?;
-            if let Some(button) = self.send_button(document) {
-                button.click();
-            }
-            if wait_for_send(&composer, 12).await {
+            if wait_for_send(self,document,text,preceding_user.clone()).await {
                 return Ok(());
             }
+            if let Some(block)=recovery::website_block(self,document) { return Err(block.message().into()); }
+            return Err("The website has not acknowledged submission. The result is saved; automatic resubmission is paused to avoid duplicates. Inspect the chat before using Send pending result.".into());
         }
         check_route()?;
         press_enter(&composer)?;
-        if wait_for_send(&composer, 25).await {
+        if wait_for_send(self,document,text,preceding_user).await {
             return Ok(());
         }
         Err("the website did not accept the message (composer never cleared); the adapter may need an update".into())
@@ -2453,15 +2555,33 @@ fn dispatch_input(document: &Document, composer: &HtmlElement) {
     }
 }
 
-async fn wait_for_send(composer: &HtmlElement, attempts: u32) -> bool {
-    for _ in 0..attempts {
-        if composer_is_empty(composer) {
-            return true;
-        }
-        sleep_ms(100).await;
+async fn wait_for_send(adapter:Adapter, document:&Document, text:&str, preceding_user:Option<String>) -> bool {
+    let watched_document=document.clone();
+    let document=document.clone();
+    let text=text.to_string();
+    let confirmed=Rc::new(move||adapter.last_user(&document).is_some_and(|user|
+        bridge_core::recovery::submitted_message_matches(preceding_user.as_deref(),&adapter.user_id(&user),&text,&assistant_text(&user))));
+    if confirmed() {return true;}
+    let resolver:Rc<RefCell<Option<js_sys::Function>>>=Rc::default();
+    let promise=js_sys::Promise::new(&mut |resolve,_|*resolver.borrow_mut()=Some(resolve));
+    let resolve=resolver.borrow().as_ref().unwrap().clone();
+    let check=confirmed.clone();
+    let callback=Closure::<dyn FnMut(js_sys::Array,web_sys::MutationObserver)>::new(move|_,_|{
+        if check() {let _=resolve.call1(&JsValue::UNDEFINED,&JsValue::TRUE);}
+    });
+    let observer=web_sys::MutationObserver::new(callback.as_ref().unchecked_ref()).ok();
+    if let Some(observer)=&observer {
+        let options=web_sys::MutationObserverInit::new();options.set_child_list(true);options.set_subtree(true);options.set_character_data(true);
+        observer.observe_with_options(&watched_document,&options).ok();
     }
-    composer_is_empty(composer)
+    let resolve=resolver.borrow().as_ref().unwrap().clone();
+    let check=confirmed.clone();
+    js::schedule(12_000,move||{let _=resolve.call1(&JsValue::UNDEFINED,&JsValue::from_bool(check()));});
+    let sent=wasm_bindgen_futures::JsFuture::from(promise).await.ok().and_then(|v|v.as_bool()).unwrap_or(false);
+    if let Some(observer)=observer {observer.disconnect();}
+    sent
 }
+
 
 fn press_enter(composer: &HtmlElement) -> Result<(), String> {
     for event_type in ["keydown", "keypress", "keyup"] {
@@ -2480,4 +2600,28 @@ fn press_enter(composer: &HtmlElement) -> Result<(), String> {
             .map_err(|_| "could not send Enter to the message box".to_string())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod recovery_memory_tests {
+    use super::*;
+    #[test]
+    fn pending_result_roundtrip_keeps_turn_draft_and_uncertain_boundary() {
+        let memory=ConversationMemory {
+            context_hash:"known".into(),workspace_id:"workspace".into(),instructions_sent:true,
+            task_id:Some("original-user".into()),task_goal:"Build a game".into(),auto_continue:true,
+            pending:Some(SavedResult {text:"actual saved result".into(),turn:DeliveryTurn {conversation:"chat".into(),user:"user".into(),assistant:"response".into()},draft:Some("exact editor draft".into()),retry:DeliveryRetry {submission_uncertain:true,..Default::default()}}),
+        };
+        let restored:ConversationMemory=serde_json::from_str(&serde_json::to_string(&memory).unwrap()).unwrap();
+        assert_eq!(restored.task_id.as_deref(),Some("original-user"));
+        let p=restored.pending.unwrap();
+        assert_eq!(p.text,"actual saved result");
+        assert_eq!(p.draft.as_deref(),Some("exact editor draft"));
+        assert_eq!(p.turn.conversation,"chat");
+        assert!(!p.retry.ready(1_000_000.0));
+        let legacy:ConversationMemory=serde_json::from_str(r#"{"instructions_sent":true,"task_id":"old"}"#).unwrap();
+        assert_eq!(legacy.task_id.as_deref(),Some("old"));
+        assert!(!legacy.auto_continue);
+        assert!(legacy.pending.is_none());
+    }
 }
