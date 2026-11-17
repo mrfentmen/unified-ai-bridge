@@ -1,10 +1,67 @@
 # Verification record
 
-These are recorded results, not a guarantee of every environment. The latest live Chrome/provider checks use extension/native host **0.5.7**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below name the build and distinguish foreground intervention from background registration.
+These are recorded results, not a guarantee of every environment. The latest live Chrome/provider checks use extension/native host **0.5.21**, protocol **6**, on **macOS 27.0.1, Apple Silicon, Chrome 157**, with Rust **1.99.1**. Provider observations below distinguish successful file operations from unattended recovery. The restart test failed; this is not an all-green release acceptance.
+
+## Live 0.5.21 acceptance — November 16–17, 2026
+
+Tested source commit `c6ef8466e101ea86cf6747f19f2006da13f41144` through the CLI's pinned Playwright MCP extension connection and macOS accessibility for Chrome's protected extension UI. No desktop Browser connector was required. The normal installed host and unpacked Chrome extension were upgraded from 0.5.7 to 0.5.21. Source, packaged manifest, `chrome://extensions` card, live panel footer and host handshake all reported **0.5.21 / protocol 6**. Native/WASM hashes are the ones in the 0.5.21 package record below.
+
+The new unsigned host encountered a Desktop-access prompt. No OS permission or signing identity was changed. Testing moved through audited `CreateWorkspace` / `SetActiveWorkspace` operations to `/Users/test/bridge-acceptance-0521`, a new **general / standard** workspace outside Desktop. Network remained disabled and no commands were granted there. The archaeology project was not used or modified. The previous scratch workspace and its configuration remain available; switching back can encounter the unresolved Desktop prompt.
+
+| Build/host check | Actual result |
+|---|---|
+| Routine workspace tests | **220 passed, 0 failed, 1 ignored** |
+| Separately executed ignored command test | **1 passed**, 251.50 seconds elapsed; its real Cargo test took 245.01 seconds |
+| Packaged self-test | **41 passed, 0 failed**, including real temporary writes and denials |
+| Release package | Native/tooling/WASM release builds exited 0; pinned rustup toolchain and package hashes verified before installation |
+| Native handshake in Chrome | `2026-11-17T04:04:40.634Z [info] extension hello (0.5.21)` |
+| CI | [0.5.19](https://github.com/mrfentmen/unified-ai-bridge/actions/runs/43964530182), [0.5.20](https://github.com/mrfentmen/unified-ai-bridge/actions/runs/43966311041) and [0.5.21](https://github.com/mrfentmen/unified-ai-bridge/actions/runs/43968525423): Linux tests, Intel macOS tests and packaging succeeded; release jobs skipped |
+| Installed doctor | Configuration, manifest/origin, installed binary/hash and SQLite passed; **799 database entries and 799 file entries** matched in the final audit verification. Signing remains ad hoc; physical Intel hardware is unverified |
+
+Each full provider loop read the real README copy, created `files/bridge-0521-<provider>.md`, read it back, received `permission_denied` for a `../` write, previewed and approved a patch creating `files/bridge-0521-<provider>-reviewed.md`, and read that file back in the same conversation. These are real model-emitted calls, not injected mock responses. Each successful Markdown creation has exactly one committed recovery record with the correct agent and hash; a new file has no previous-content checkpoint.
+
+| Provider | 0.5.21 file loop | Navigation / background / limits |
+|---|---|---|
+| ChatGPT | **Pass**, seven calls including denial and approved patch | New-chat/return retained one panel; registered while hidden for more than 60 seconds. A later concurrency read hit the site's **Context window full** gate during result delivery; its result draft was preserved. A fresh conversation passed the response-budget test |
+| Claude | **Pass**, same seven calls | New-chat/history return and hidden registration passed. Brief adapter warnings occurred during thinking |
+| DeepSeek | **Pass**, same seven calls | New-chat/back required returning through the known history entry; one connected panel remained while hidden |
+| Gemini | **Pass**, same seven calls | Panel/session survived navigation and backgrounding, but setup retained a generated instruction draft and needed attention. Automatic setup recovery is **not passed** |
+| Grok.com | **Blocked** | One ordinary reload recovered an initial website error; the site then reported **Free tier limit reached**. No tools executed |
+| Grok on X | **Partial**: read and create succeeded, result returned | Site reached its **20 questions per 24 hours** limit before read-back, denial and approved-patch steps. No limit bypass or account linking |
+| Qwen | **Pass**, same seven calls | Identical candidate replies required an explicit choice before execution. After new-chat navigation, the original proof conversation was reopened at its observed URL. Hidden registration passed; message scanning can still require foreground rendering |
+| Kimi | **Pass**, same seven calls | New-chat/back and hidden registration passed. A temporary message-ID warning appeared during thinking and cleared after completion |
+
+The seven basic files and six reviewed files have matching expected bytes: **13 files, 13 committed recovery records, no duplicate writes**. All six outside-root denial paths are absent. The five copied source assets and the 13 provider files retained their recorded hashes throughout the later UI checks. Research dataset hashes were not re-read in this pass because that project was excluded.
+
+Additional live checks:
+
+- **Response limit:** a fresh ChatGPT conversation emitted five read blocks in one assistant reply. The first four completed; call index 4 returned `response_budget_exceeded`, visible in the conversation. The model stopped without retries. Native log timestamp: `2026-11-17T05:06:54.565Z`.
+- **Concurrent conversations:** ChatGPT, Claude, DeepSeek, Qwen and Kimi each executed the correct one-file read between `05:01:17` and `05:01:43Z`. Four received the result; ChatGPT's context-full gate prevented delivery. This is **not** a five-way delivery pass or proof of simultaneous host dispatch. No cross-provider file attribution was observed.
+- **Draft protection:** a known test draft survived approval and queued result delivery in ChatGPT. Clearing only that draft allowed automatic delivery. A later manual **Send pending result** click could not overcome the website's context-full restriction; its error stayed visible and the result remained in the composer.
+- **Setup does not authorize tools:** Gemini emitted `list_files` during setup; the bridge executed zero calls until an explicit test task arrived.
+- **Extension UI:** readiness, build diagnostics, audit/DB/log information, and Qwen's patch approval were exercised through the real `sidepanel.html` route opened as an extension tab. This does not establish the separate docked Chrome side panel or toolbar-popup lifecycle on this build.
+- **OCR:** the live control recognized `Dummy PDF file` from the existing public raster. A traversal path returned `permission_denied`.
+- **WAV:** the live inspect/trim controls approved `output/live-clip.wav`: 400 frames, 8 kHz, stereo, 8-bit PCM, 0.05 seconds. Independent Python wave decoding matched every selected source byte. SHA256: `e2bc314adf850521c0727ad8177941d23dc335853005a981213e6ad9a1fc60f5`. Explicit Deny created no `output/live-denied.wav`. An earlier approval timeout also created nothing; a separately approved retry succeeded. The accessibility driver needed `AXPress`, rather than its ineffective click attempt.
+- **PDF:** the live creation, text-read and page-preview controls produced `output/live-acceptance.pdf` and one 707 × 1000 PNG. The complete rendered page was inspected: legible title, paragraphs, bullets and footer, with no clipping. PDF SHA256: `34eff68d21e0a6fffcf4fae5911381be331aebdc404284f33226da9195b66467`.
+- **XLSX:** the live controls inspected the public sample copy, read A2, approved `output/live-workbook.xlsx`, and reopened A2 as literal text `0.5.21`. Independent ZIP/XML inspection found only the selected worksheet changed; all other package payloads were identical. Quick Look rendered both cells correctly. SHA256: `fe3c247ceccfd92539a364bdef1b7e043efe30e17eb7918b789f8ed167235ac4`.
+
+### Failed restart check and remaining acceptance
+
+With no active command job or tool request, the Chrome native-host process was terminated to exercise recovery. The background automatically launched a replacement and logged `extension hello (0.5.21)` at **05:11:18.819Z**. However, the host had **zero registered sessions** while content panels still displayed their previous IDs as connected. A manual panel read correctly refused to run without a session. No previous write was repeated.
+
+The failure is in session recovery: `stop_native` clears the background session list, but content `poll_status` only registers when its local `session_id` is `None`; it does not invalidate an ID absent from the current host status. The global Reconnect control also keeps a healthy existing native port, so it does not repair this state. Reloading the dedicated provider tabs re-registers them. This workaround is not a passing automatic-recovery test. **Fix session invalidation/re-registration before claiming unattended restart support.**
+
+The workaround restored all nine controlled tab registrations between **05:16:20 and 05:18:23Z**, including both Grok sites and the separate ChatGPT budget conversation. One reload timed out and X reported an aborted navigation; both subsequently registered in the host log. The acceptance workspace still had the same **68 terminal request receipts (67 complete, 1 rejected)** and 13 provider-file recovery records after recovery. No old tool call was rerun. These receipts include panel calls; a completed receipt can contain an expected permission denial and does not prove in-conversation delivery.
+
+Other open checks are Grok's quota-blocked steps, Gemini setup recovery, Qwen foreground/candidate handling, quota/context-aware delivery errors, transient adapter warnings, and the floating panel covering ChatGPT's Send control. The test window being moved mostly off-screen also blocked automation input; moving it back into view restored input and is separate from the bridge defects. TCC persistence across signed updates and a physical older Intel Mac remain unverified.
+
+The newer binary-recovery, code-navigation, Git, CSV, network, MCP-lifecycle and Pause/Resume controls retain their native/packaged evidence below; this pass does not establish all of their browser workflows. In-flight workspace switching, deliberate late-result races, docked-panel/popup approvals and complete all-provider concurrency still need separate live acceptance. No backlog box was marked complete from these partial checks.
+
+Raw host messages, transcripts, UI readings, file hashes, CI job results and independent file checks are local in ignored `docs/evidence/0.5.21/live/`. They include private session/conversation data and are not committed. This section is the public, bounded evidence record.
 
 ## Optional PNG OCR candidate 0.5.21 — November 16, 2026
 
-Source/isolated package are 0.5.21. Normal Chrome files/native installation remain 0.5.7; live browser acceptance is pending.
+At initial packaging, source/isolated package were 0.5.21 and the normal install was still 0.5.7. The later live acceptance and normal-install upgrade are recorded above.
 
 | Check | Observed result |
 |---|---|
@@ -17,8 +74,8 @@ Source/isolated package are 0.5.21. Normal Chrome files/native installation rema
 | Accuracy test correction | The first test incorrectly required exact recognition of `WRITING`; Vision returned `WRrrING`. The test now checks the expected heading/prefix and >90% character similarity for two clear lines. Exact policy/budget assertions are unchanged; this is not a lossless-text claim |
 | Denials/restart | Explicit 256-byte truncation; changed hash, traversal, unknown language field and hard links refused. Original PNG hashes unchanged. Repeated public-page recognition after host restart matched |
 | Installed checks | 41 self-tests passed; doctor verified config/manifest/binary/SQLite and 20 matching audit entries |
-| Previous CI | 0.5.19 run 43964530182 passed Linux/Intel tests; packaging still running. 0.5.20 run 43966311041 passed Linux; Intel jobs still running when checked |
-| Browser/physical Intel | New OCR control compiled; live panel/provider acceptance and the physical older Intel Mac remain unverified |
+| CI completion recheck | 0.5.19 run 43964530182, 0.5.20 run 43966311041 and 0.5.21 run 43968525423 passed Linux/Intel tests and packaging; release jobs skipped |
+| Browser/physical Intel | Live OCR control passed in the later acceptance above; the physical older Intel Mac remains unverified |
 
 Public raster SHA256 `6bdc49ae22aac99c95725e2355f3ccaf96e49dec339e5926c42a2dece686a90c`. Report raster SHA256 `768a16bfd37b0e3b2019b47357e4d322b0fc849f533d3e01693f4964733196e7`. Native SHA256 `c05aad1d7c01355f48b096eba9f4d6920ca9c627e24a420511a6a41eed082d17`; WASM SHA256 `92f27f7fc721e90f6eb21e6e841f6280535a8919fc75563d60583dd225265ec1`. Input copies, full OCR results, raw framed messages and logs are local in ignored `docs/evidence/0.5.21/`.
 

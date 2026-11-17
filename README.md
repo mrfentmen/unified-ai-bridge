@@ -13,7 +13,7 @@ Unified AI Bridge closes that gap. A Chrome extension connects your normal, sign
 
 No provider API keys. No separate AI subscription from this project. Your provider's normal account limits still apply.
 
-> **Early access · 0.5.21 candidate; last live provider verification 0.5.7** — This is a working developer project, with live file operations verified on several providers. It is not yet a one-click installer or a promise that every website layout works. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
+> **Early access · 0.5.21 live-tested** — Six providers passed the file/approval loop; Grok remains partly blocked by website quotas. A host-restart test found that tabs need reloading to restore their sessions, so unattended recovery is not ready. See [provider status](#provider-status) and [verification](docs/VERIFICATION.md).
 
 ## What you can do
 
@@ -28,7 +28,7 @@ No provider API keys. No separate AI subscription from this project. Your provid
 - **Read and query tables (0.5.12 candidate).** Page through CSV/TSV files, select columns, filter records and calculate bounded numeric summaries. Values stay data; formulas are never executed. XLSX uses the separate workbook tools below; browser acceptance remains pending. [Table support](docs/TABLES.md).
 - **Read and edit simple spreadsheets (0.5.16 candidate).** Inspect XLSX sheets, read cell ranges and approve a copy with changed literal cells. Originals, styles and untouched content are preserved. Formula recalculation and complex workbook edits are refused. [Workbook limits](docs/WORKBOOKS.md).
 - **Read documents and preview PDF pages (0.5.15 candidate).** Extract DOCX body text or PDF embedded text with page references on macOS. Save approved PDF page previews as new PNG files. Encrypted PDFs, Word rendering and chat image delivery remain unavailable; local PNG OCR is a separate tool below. [Document subsets](docs/DOCUMENTS.md).
-- **Create a PDF report (0.5.19 candidate).** Supply a title, headings, paragraphs and bullets, then approve a new PDF with embedded fonts and numbered pages. Native creation, read-back and render checks are separate from live browser acceptance. DOCX, slides and richer layout remain pending. [Report format and limits](docs/DOCUMENT-CREATION.md).
+- **Create a PDF report.** Supply a title, headings, paragraphs and bullets, then approve a new PDF with embedded fonts and numbered pages. Creation, read-back and rendered-page inspection passed through the live extension controls on 0.5.21. DOCX, slides and richer layout remain pending. [Report format and limits](docs/DOCUMENT-CREATION.md).
 - **Inspect and trim PCM WAV audio (0.5.20 candidate).** Read format/duration and approve a new file containing an exact frame range. Original samples are preserved; unsupported metadata and formats are refused. Playback, transcription, video and chat audio delivery remain pending. [Audio subset](docs/MEDIA.md).
 - **Read text in a PNG (0.5.21 candidate).** Run local fast English OCR on macOS, including saved PDF page previews. Results include text boxes and confidence but can contain recognition mistakes. No image is sent to a website. [OCR boundaries](docs/OCR.md).
 - **Use your own project commands.** Grant a specific executable, arguments, working directory, timeout, and output limit. The chat selects an allowed command; it cannot invent a shell command.
@@ -73,16 +73,18 @@ The implementation is Rust throughout: **Oxichrome** generates the extension pac
 
 | Website | What has been verified | Notes |
 | --- | --- | --- |
-| ChatGPT | Read → create → read-back; approved patch; draft-safe result delivery | 0.5.7; navigation/background also checked on 0.5.6. An incomplete model reply needed a corrected task |
-| Claude | Read → create → read-back; approved patch; navigation/background | 0.5.7 fixes hidden announcement extraction; use fenced `bridge-tool` JSON to preserve quotes |
-| DeepSeek | Read → create → read-back; approved patch | 0.5.7; navigation/background also checked on 0.5.6 |
-| Gemini | Read → create → read-back; approved patch | 0.5.7; navigation/background also checked on 0.5.6 |
-| Grok (`grok.com`) | Connected on 0.5.6 | Website's free-tier limit blocked the current file loop |
-| Grok on X | Read → create → read-back; approved patch | 0.5.7; navigation/background also checked on 0.5.6 |
-| Qwen | Read → create → read-back; approved patch | 0.5.7; needed foreground rendering and a choice between candidate answers |
-| Kimi | Read → create → read-back; approved patch; earlier generated SVG import | General loop on 0.5.7; artifact import on 0.5.0 |
+| ChatGPT | Read → create → read-back; denied traversal; approved patch; response budget | 0.5.21; navigation/background passed. Later result delivery hit the site's context-full limit |
+| Claude | Read → create → read-back; denied traversal; approved patch; navigation/background | 0.5.21; transient warning during thinking; fenced `bridge-tool` JSON preserves quotes |
+| DeepSeek | Read → create → read-back; denied traversal; approved patch; navigation/background | 0.5.21; returned through the known history entry after New chat |
+| Gemini | Read → create → read-back; denied traversal; approved patch | 0.5.21; native session survives navigation, but a generated setup draft can stall reconnection |
+| Grok (`grok.com`) | Connected on 0.5.21 | Website's free-tier limit blocked file execution |
+| Grok on X | Read → create on 0.5.21; full loop previously on 0.5.7 | Current 20-question daily limit blocked the remaining steps |
+| Qwen | Read → create → read-back; denied traversal; approved patch | 0.5.21; needed foreground rendering and a choice between candidate answers |
+| Kimi | Read → create → read-back; denied traversal; approved patch; navigation/background | 0.5.21; transient warning during thinking; generated SVG import was separately verified on 0.5.0 |
 
 Qwen sometimes hides rendered message text in background tabs. Its session stays connected, but tool execution may wait until you bring the tab into view. All adapters depend on website markup and can need updates when a provider changes its interface.
+
+If the native host restarts on 0.5.21, reload the provider tabs. The host reconnects automatically, but existing panels can retain stale session IDs. This is a known failed recovery check, not an account or filesystem-permission issue.
 
 ## Run it locally
 
